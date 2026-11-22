@@ -1,0 +1,25 @@
+{
+  "name": "pianissimo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pianissimo - fast, keyboard-first music notation editor",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "api": "node scripts/api.mjs"
+  },
+  "dependencies": {
+    "tone": "^15.1.22",
+    "vexflow": "^5.9.0"
+  },
+  "devDependencies": {
+    "happy-dom": "^21.0.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

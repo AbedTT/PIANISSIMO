@@ -1,0 +1,21 @@
+/* Printed pages (used by the editor and the public viewer). */
+.print-page {
+  background: #fff; box-sizing: border-box; position: relative; overflow: hidden; color: #000;
+  display: flex; flex-direction: column;
+}
+.print-page .pp-title { font: 600 26px Georgia, 'Times New Roman', serif; text-align: center; margin: 4mm 0 1mm; }
+.print-page .pp-composer { font: 14px Georgia, serif; text-align: right; margin-bottom: 4mm; }
+.print-page .pp-running { font: italic 11px Georgia, serif; color: #555; margin-bottom: 3mm; }
+.print-page svg { display: block; }
+.print-page .pp-footer {
+  position: absolute; left: 0; right: 0; bottom: 8mm; text-align: center; font: 11px Georgia, serif; color: #444;
+}
+.print-pages { display: none; }
+
+/* ---------- print: only the paginated pages ---------- */
+@media print {
+  body > *:not(.print-pages) { display: none !important; }
+  .print-pages { display: block !important; }
+  .print-page { page-break-after: always; break-after: page; }
+  .print-page:last-child { page-break-after: auto; break-after: auto; }
+}

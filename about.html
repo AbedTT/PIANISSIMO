@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About · Pianissimo</title>
+    <meta name="description" content="Why Pianissimo exists, how it is built, and the open-source projects it stands on." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+  </head>
+  <body data-page="about">
+    <main class="wrap">
+      <div class="page-head">
+        <h1>About Pianissimo</h1>
+        <p>Making sheet music should feel as easy as writing a text message.</p>
+      </div>
+      <div class="article">
+        <nav class="toc" aria-label="Contents">
+          <a href="#why">Why</a>
+          <a href="#how">How it works</a>
+          <a href="#privacy">Your data</a>
+          <a href="#credits">Credits</a>
+        </nav>
+        <article class="prose">
+          <h2 id="why">Why Pianissimo</h2>
+          <p>Most notation software makes you hunt through palettes and menus. Pianissimo is built around the keyboard: every action is one short command, so writing a melody feels like typing a sentence, and you hear it as you go.</p>
+          <p>It is for students writing their first exercises, teachers preparing worksheets, songwriters sketching lead sheets, and choirs printing parts.</p>
+
+          <h2 id="how">How it works</h2>
+          <ul>
+            <li>Everything runs in your browser and there is nothing to install. Once the editor is open you can keep writing without a connection; instrument sounds download the first time you use them.</li>
+            <li>Scores use an open format and export to MusicXML, the standard every major notation program reads, so your music is never locked in.</li>
+            <li>Signing in is optional. It adds a cloud library and share links.</li>
+          </ul>
+
+          <h2 id="privacy">Your data</h2>
+          <p>Scores are private unless you choose to share them. We store only what is needed to run your account. See the <a href="privacy.html">privacy policy</a>.</p>
+
+          <h2 id="credits">Credits</h2>
+          <p>Pianissimo stands on excellent open-source work:</p>
+          <table>
+            <tr><th>Project</th><th>Used for</th><th>License</th></tr>
+            <tr><td><a href="https://www.vexflow.com/" rel="noopener">VexFlow</a></td><td>Music engraving</td><td>MIT</td></tr>
+            <tr><td><a href="https://github.com/steinbergmedia/bravura" rel="noopener">Bravura</a> (Steinberg)</td><td>Music font (SMuFL)</td><td>SIL Open Font License</td></tr>
+            <tr><td><a href="https://tonejs.github.io/" rel="noopener">Tone.js</a></td><td>Audio playback</td><td>MIT</td></tr>
+            <tr><td>Salamander Grand Piano (Alexander Holm)</td><td>Concert piano sound</td><td>CC BY 3.0</td></tr>
+            <tr><td>FluidR3 GM soundfont (Frank Wen), via <a href="https://github.com/gleitz/midi-js-soundfonts" rel="noopener">midi-js-soundfonts</a></td><td>Instrument sounds</td><td>MIT</td></tr>
+          </table>
+        </article>
+      </div>
+    </main>
+    <script type="module" src="/src/site/site.ts"></script>
+  </body>
+</html>

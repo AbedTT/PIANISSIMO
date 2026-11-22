@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pianissimo · Write sheet music as fast as you can type</title>
+    <meta name="description" content="Pianissimo is a free, keyboard-first music notation editor in your browser. Type notes with A–G, hear them instantly, add lyrics and chords, and print or share beautiful sheet music." />
+    <meta property="og:title" content="Pianissimo · Sheet music made easy" />
+    <meta property="og:description" content="Free, keyboard-first music notation in your browser." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+  </head>
+  <body data-page="home">
+    <main>
+      <section class="hero">
+        <div class="wrap">
+          <div>
+            <h1>Write sheet music <span class="grad">as fast as you can type.</span></h1>
+            <p class="lead">
+              Pianissimo is a free music notation editor that runs in your browser. Press <kbd>C</kbd> <kbd>D</kbd> <kbd>E</kbd>
+              and the notes appear; press <kbd>Space</kbd> and you hear them.
+            </p>
+            <div class="actions">
+              <a class="btn btn-primary" href="app.html">Start writing, it's free</a>
+              <a class="btn btn-ghost" href="guide.html">See how it works</a>
+            </div>
+            <p class="note">No download and no account needed to start. Your work is saved in your browser as you go.</p>
+          </div>
+          <div class="demo-card" aria-label="Live example score">
+            <div class="bar">
+              <span class="dots"><i></i><i></i><i></i></span>
+              <span>Ode to Joy: written in Pianissimo</span>
+              <button id="demoPlay" class="btn btn-primary btn-small">▶ Listen</button>
+            </div>
+            <div id="demoScore"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap">
+          <h2>Everything you need to write music</h2>
+          <p class="sub">From a first melody to a printed songbook: notes, chords, lyrics, playback and print in one place.</p>
+          <div class="grid cols-3">
+            <div class="card"><div class="icon">⌨</div><h3>Keyboard-first entry</h3><p>Pick a length with <kbd>1</kbd>–<kbd>7</kbd>, type <kbd>A</kbd>–<kbd>G</kbd>. Chords, ties, triplets and accidentals are one key away.</p></div>
+            <div class="card"><div class="icon">♪</div><h3>Hear every note</h3><p>Concert grand, strings, winds, brass, guitars, choir and more: about 30 real instrument sounds, chosen per staff.</p></div>
+            <div class="card"><div class="icon">♫</div><h3>A band that follows you</h3><p>Type chord symbols and Pianissimo plays them as a backing: pop, waltz, arpeggio or guitar strum.</p></div>
+            <div class="card"><div class="icon">La</div><h3>Lyrics &amp; chords</h3><p>Type lyrics under the notes with automatic hyphens and several verses. Chord symbols print like a real lead sheet.</p></div>
+            <div class="card"><div class="icon">V2</div><h3>Real notation</h3><p>Two voices per staff, slurs, dynamics, repeats, first and second endings, D.C. and D.S. jumps.</p></div>
+            <div class="card"><div class="icon">⎙</div><h3>Print, PDF &amp; share</h3><p>Clean pages on A4 or Letter. Share a link anyone can open and play, and work with MusicXML and MIDI.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap">
+          <h2>Three steps to your first score</h2>
+          <p class="sub">If you can type, you can write music.</p>
+          <div class="grid cols-3 steps">
+            <div class="card"><h3>Choose a length</h3><p><kbd>1</kbd> whole note … <kbd>3</kbd> quarter … <kbd>4</kbd> eighth. Add <kbd>.</kbd> for a dotted note.</p></div>
+            <div class="card"><h3>Type the notes</h3><p><kbd>A</kbd>–<kbd>G</kbd> write a note in the nearest octave. Move it with <kbd>↑</kbd> <kbd>↓</kbd>, sharpen with <kbd>=</kbd>.</p></div>
+            <div class="card"><h3>Listen and share</h3><p><kbd>Space</kbd> plays it back. Save to your library and send a link, or print a PDF.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap">
+          <h2>Made for every musician</h2>
+          <p class="sub">Templates for the most common ensembles, and every staff can play any sound.</p>
+          <div class="pills">
+            <span class="pill">🎹 Piano</span><span class="pill">🎤 Voice + piano</span><span class="pill">🎸 Lead sheet <small>melody, chords, lyrics</small></span>
+            <span class="pill">🎻 Violin</span><span class="pill">🎻 Cello</span><span class="pill">🎺 Trumpet</span><span class="pill">🎷 Saxophone</span>
+            <span class="pill">🪈 Flute</span><span class="pill">⛪ Organ</span><span class="pill">🎼 Choir</span><span class="pill">🎹 Synths <small>work offline</small></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="block" id="recentSection" hidden>
+        <div class="wrap">
+          <h2>Recently shared</h2>
+          <p class="sub">Scores the community made public. Open one to see and hear it.</p>
+          <div class="gallery" id="recentGallery"></div>
+          <p><a href="explore.html">Explore all public scores →</a></p>
+        </div>
+      </section>
+
+      <div class="wrap">
+        <div class="cta-band">
+          <h2>Your next song starts with one key</h2>
+          <p>Free, private by default, and nothing to install.</p>
+          <a class="btn btn-primary" href="app.html">Open the editor</a>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/site/site.ts"></script>
+  </body>
+</html>

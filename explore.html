@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Explore scores · Pianissimo</title>
+    <meta name="description" content="Browse sheet music shared publicly by Pianissimo users. Open any score to see and hear it." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+  </head>
+  <body data-page="explore">
+    <main class="wrap">
+      <div class="page-head">
+        <h1>Explore scores</h1>
+        <p>Sheet music people have shared publicly. Open one to see it, hear it, or copy it into your own editor.</p>
+      </div>
+      <section class="block" style="padding-top: 28px">
+        <input id="exploreSearch" class="search" type="search" placeholder="Search by title or composer…" aria-label="Search scores" />
+        <div class="gallery" id="exploreGallery"><div class="empty">Loading…</div></div>
+      </section>
+    </main>
+    <script type="module" src="/src/site/site.ts"></script>
+  </body>
+</html>

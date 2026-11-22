@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pianissimo · Music notation made easy</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="index.html" title="Pianissimo home"><span class="logo">𝄞</span> Pianissimo</a>
+      <nav class="file-actions">
+        <button data-cmd="new" title="New score (Alt+N)">New</button>
+        <button data-cmd="open" title="Open (Ctrl+O)">Open</button>
+        <button data-cmd="save" title="Save (Ctrl+S)">Save</button>
+        <div class="menu">
+          <button class="menu-trigger">Export ▾</button>
+          <div class="menu-list">
+            <button data-cmd="download">Pianissimo file (.json backup)</button>
+            <button data-cmd="exportXml">MusicXML (.musicxml)</button>
+            <button data-cmd="exportMidi">MIDI (.mid)</button>
+            <button data-cmd="print">PDF / Print</button>
+          </div>
+        </div>
+      </nav>
+      <div class="transport">
+        <button id="play" class="play" data-cmd="play" title="Play / stop (Space)">▶</button>
+        <button id="midiBtn" class="midi-btn" data-cmd="midi" title="MIDI keyboard input (Shift+M)">🎹 MIDI</button>
+        <label class="tempo" title="Tempo (quarter notes per minute)">♩ = <input id="tempo" type="number" min="20" max="300" /></label>
+      </div>
+      <div class="right-actions">
+        <span id="cloudStatus" class="cloud-status"></span>
+        <button data-cmd="share" title="Share a link to this score (Alt+S)">⇪ Share</button>
+        <button data-cmd="library" title="Your saved scores (Ctrl+Shift+O)">▤ My scores</button>
+        <button data-cmd="search" title="Search commands (Ctrl+Shift+P or F1)">⌘</button>
+        <button data-cmd="help" title="Keyboard shortcuts (?)">?</button>
+        <button id="signInBtn" class="primary small">Sign in</button>
+        <div class="menu" id="accountMenu" hidden>
+          <button class="menu-trigger" id="accountName"></button>
+          <div class="menu-list menu-right">
+            <button data-cmd="library">My scores</button>
+            <button id="signOutBtn">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="toolbar" id="toolbar"></div>
+
+    <main class="workspace">
+      <section class="sheet-scroll" id="sheetScroll">
+        <div class="sheet" id="sheet">
+          <div class="sheet-header">
+            <input id="title" class="title-input" spellcheck="false" aria-label="Title" />
+            <input id="composer" class="composer-input" spellcheck="false" placeholder="Composer" aria-label="Composer" />
+          </div>
+          <div class="score-wrap" id="scoreWrap">
+            <div id="score"></div>
+            <div id="selection"></div>
+            <div id="cursor" class="cursor"></div>
+            <div id="playhead" class="playhead"></div>
+            <div id="ghost" class="ghost"><span></span></div>
+            <input id="textEntry" class="text-entry" hidden autocomplete="off" spellcheck="false" />
+            <div id="breakMarks"></div>
+            <div id="verseBadge" class="verse-badge" hidden></div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side" id="side">
+        <h3>Score setup</h3>
+        <label>Key signature <select id="key"></select></label>
+        <label>Time signature
+          <span class="row">
+            <input id="beats" type="number" min="1" max="16" />
+            <span>/</span>
+            <select id="beatType"><option>2</option><option>4</option><option>8</option><option>16</option></select>
+          </span>
+        </label>
+        <label>Staves <select id="staves">
+          <option value="treble,bass">Piano (grand staff)</option>
+          <option value="treble">Treble staff</option>
+          <option value="bass">Bass staff</option>
+          <option value="alto">Alto staff</option>
+          <option value="treble,treble">Two treble staves</option>
+        </select></label>
+        <h3>Sounds</h3>
+        <div id="sounds"></div>
+        <h3>Chord accompaniment</h3>
+        <label class="check"><input type="checkbox" id="accOn" /> Play the chord symbols</label>
+        <div id="accOptions">
+          <label>Style <select id="accStyle"></select></label>
+          <label>Sound <select id="accSound"></select></label>
+        </div>
+        <div class="side-buttons">
+          <button data-cmd="addBarEnd">+ Add bar</button>
+          <button data-cmd="removeBar">− Delete bar</button>
+        </div>
+        <h3>Quick start</h3>
+        <ol class="tips">
+          <li>Pick a length: <kbd>1</kbd>…<kbd>7</kbd> (whole … 64th), <kbd>.</kbd> for dotted</li>
+          <li>Type notes <kbd>A</kbd>–<kbd>G</kbd>; <kbd>0</kbd> for a rest</li>
+          <li><kbd>↑</kbd><kbd>↓</kbd> move the note, <kbd>=</kbd> <kbd>-</kbd> sharp / flat</li>
+          <li><kbd>Shift</kbd>+letter builds chords</li>
+          <li><kbd>I</kbd> to click notes in with the mouse</li>
+          <li><kbd>Shift</kbd>+arrows select; <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd> copy &amp; paste</li>
+          <li><kbd>Shift</kbd>+<kbd>3</kbd> triplets, <kbd>S</kbd> slur, <kbd>[</kbd> <kbd>]</kbd> repeats</li>
+          <li><kbd>Ctrl</kbd>+<kbd>L</kbd> lyrics, <kbd>Ctrl</kbd>+<kbd>K</kbd> chord symbols</li>
+          <li><kbd>V</kbd> switches to a second voice on the same staff</li>
+          <li>Change instruments under <b>Sounds</b></li>
+          <li><kbd>Alt</kbd>+<kbd>A</kbd> plays the chords as a band; <kbd>L</kbd> loops</li>
+          <li><kbd>Space</kbd> to listen</li>
+        </ol>
+      </aside>
+    </main>
+
+    <footer class="status" id="status"></footer>
+
+    <div class="modal" id="helpModal" hidden>
+      <div class="modal-card wide">
+        <header><h2>Keyboard shortcuts</h2><button class="close" data-close>✕</button></header>
+        <div class="help-grid" id="helpGrid"></div>
+      </div>
+    </div>
+
+    <div class="modal" id="searchModal" hidden>
+      <div class="modal-card search">
+        <input id="searchInput" placeholder="Type a command… (e.g. tie, export, staccato)" autocomplete="off" />
+        <ul id="searchList"></ul>
+      </div>
+    </div>
+
+    <div class="modal" id="newModal" hidden>
+      <div class="modal-card">
+        <header><h2>New score</h2><button class="close" data-close>✕</button></header>
+        <form id="newForm" class="new-form">
+          <label>Title <input name="title" value="Untitled score" /></label>
+          <label>Composer <input name="composer" /></label>
+          <label>Instrument <select name="staves">
+            <optgroup label="Keyboards">
+              <option value="treble:piano,bass:piano">Piano</option>
+              <option value="treble:electric_piano,bass:electric_piano">Electric piano</option>
+              <option value="treble:church_organ,bass:church_organ">Organ</option>
+              <option value="treble:harpsichord,bass:harpsichord">Harpsichord</option>
+            </optgroup>
+            <optgroup label="Song / band">
+              <option value="treble:choir,bass:piano">Voice + piano accompaniment</option>
+              <option value="treble:guitar_steel">Lead sheet (melody, chords, lyrics)</option>
+              <option value="treble:guitar_nylon">Classical guitar</option>
+            </optgroup>
+            <optgroup label="Strings">
+              <option value="treble:violin">Violin</option>
+              <option value="alto:viola">Viola</option>
+              <option value="bass:cello">Cello</option>
+              <option value="bass:contrabass">Double bass</option>
+              <option value="treble:violin,bass:cello">Violin + cello duet</option>
+            </optgroup>
+            <optgroup label="Winds &amp; brass">
+              <option value="treble:flute">Flute</option>
+              <option value="treble:clarinet">Clarinet</option>
+              <option value="treble:alto_sax">Saxophone</option>
+              <option value="treble:trumpet">Trumpet</option>
+              <option value="bass:trombone">Trombone</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option value="treble:music_box">Music box</option>
+              <option value="treble:marimba">Marimba</option>
+              <option value="treble:synth_epiano,bass:synth_pad">Synths (works offline)</option>
+            </optgroup>
+          </select></label>
+          <label>Key <select name="key" id="newKey"></select></label>
+          <label>Time <select name="time">
+            <option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option><option>12/8</option><option>2/2</option>
+          </select></label>
+          <label>Tempo <input name="tempo" type="number" value="100" min="20" max="300" /></label>
+          <label>Bars <input name="measures" type="number" value="8" min="1" max="500" /></label>
+          <button type="submit" class="primary">Create score</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal" id="transposeModal" hidden>
+      <div class="modal-card">
+        <header><h2>Transpose</h2><button class="close" data-close>✕</button></header>
+        <form id="transposeForm" class="new-form">
+          <label>Interval <select id="transposeInterval"></select></label>
+          <label>Apply to <select id="transposeScope">
+            <option value="score">Whole score (changes the key)</option>
+            <option value="selection">Selected notes only</option>
+          </select></label>
+          <p id="transposePreview" class="hint"></p>
+          <button type="submit" class="primary">Transpose</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal" id="printModal" hidden>
+      <div class="modal-card print-card">
+        <header>
+          <h2>Print / Save as PDF</h2>
+          <button class="close" data-close>✕</button>
+        </header>
+        <div class="print-controls">
+          <label>Paper <select id="pageSize">
+            <option value="a4">A4 (210 × 297 mm)</option>
+            <option value="letter">US Letter (8.5 × 11 in)</option>
+          </select></label>
+          <label>Staff size <select id="staffSize">
+            <option value="0.65">Small (more bars per line)</option>
+            <option value="0.8">Medium</option>
+            <option value="0.95">Large</option>
+            <option value="1.1">Extra large (easy reading)</option>
+          </select></label>
+          <span id="printInfo" class="hint"></span>
+          <button id="printNow" class="primary">Print / Save PDF</button>
+        </div>
+        <p class="hint">Tip: <kbd>Ctrl</kbd>+<kbd>Enter</kbd> forces a new line after a bar, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Enter</kbd> a new page.</p>
+        <div id="printPreview" class="print-preview"></div>
+      </div>
+    </div>
+    <div id="printPages" class="print-pages"></div>
+    <style id="pageStyle">@page { size: A4; margin: 0; }</style>
+
+    <div class="toast" id="toast"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

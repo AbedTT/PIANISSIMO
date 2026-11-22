@@ -1,0 +1,4 @@
+# Normalise line endings in the repository (LF), check out natively
+* text=auto
+*.png binary
+*.sqlite binary

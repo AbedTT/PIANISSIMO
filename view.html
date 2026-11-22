@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Score · Pianissimo</title>
+    <meta name="description" content="View and play sheet music made with Pianissimo." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+  </head>
+  <body data-page="view">
+    <main class="wrap">
+      <div class="viewer-bar" id="viewerBar" hidden>
+        <div>
+          <h1 id="vTitle"></h1>
+          <div class="by" id="vBy"></div>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn btn-primary btn-small" id="vPlay">▶ Play</button>
+        <button class="btn btn-ghost btn-small" id="vPrint">⎙ Print / PDF</button>
+        <button class="btn btn-ghost btn-small" id="vXml">⤓ MusicXML</button>
+        <button class="btn btn-ghost btn-small" id="vEdit">✎ Open in editor</button>
+      </div>
+      <div class="viewer-sheet" id="vSheet" hidden>
+        <div id="vScore"></div>
+        <div class="playhead" id="vPlayhead"></div>
+      </div>
+      <div id="vDrop" class="viewer-drop" hidden>
+        <h2 style="margin-top: 0">Open a score to view it</h2>
+        <p>Drop a MusicXML (<code>.musicxml</code>, <code>.mxl</code>) or Pianissimo file here, or</p>
+        <label class="btn btn-primary">Choose a file<input type="file" id="vFile" accept=".musicxml,.xml,.mxl,.json" hidden /></label>
+      </div>
+      <p id="vMessage" class="empty" hidden></p>
+    </main>
+    <div id="printPages" class="print-pages"></div>
+    <style id="pageStyle">@page { size: A4; margin: 0; }</style>
+    <script type="module" src="/src/site/site.ts"></script>
+    <script type="module" src="/src/viewer.ts"></script>
+  </body>
+</html>

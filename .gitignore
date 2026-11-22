@@ -1,0 +1,20 @@
+# dependencies and build output
+node_modules/
+dist/
+
+# server: local configuration and database files (keep the folder)
+server/config.local.php
+server/data/*
+!server/data/.htaccess
+!server/data/.gitkeep
+
+# logs, OS and editor files
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# environment files that may contain secrets
+.env
+.env.*
