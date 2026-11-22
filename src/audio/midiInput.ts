@@ -8,6 +8,8 @@ export class MidiInput {
   /** Receives one chord (sorted MIDI note numbers) per key-press group. */
   onChord: (notes: number[]) => void = () => {};
   onChange: () => void = () => {};
+  /** Every key press/release with its time (performance.now() clock), for recording. */
+  onNote: (note: number, velocity: number, on: boolean, time: number) => void = () => {};
 
   private access: MIDIAccess | null = null;
   private pending: number[] = [];
@@ -39,17 +41,22 @@ export class MidiInput {
     this.access.inputs.forEach((input) => {
       if (input.state !== 'connected') return;
       this.devices.push(input.name ?? 'MIDI device');
-      input.onmidimessage = (msg) => this.handle(msg.data);
+      input.onmidimessage = (msg) => this.handle(msg.data, msg.timeStamp);
     });
     this.onChange();
   }
 
-  private handle(data: Uint8Array | null) {
+  private handle(data: Uint8Array | null, time = performance.now()) {
     if (!data || data.length < 3) return;
     const command = data[0] & 0xf0;
     const note = data[1];
     const velocity = data[2];
-    if (command !== 0x90 || velocity === 0) return; // note-on only (velocity 0 = note-off)
+    if (command === 0x80 || (command === 0x90 && velocity === 0)) {
+      this.onNote(note, 0, false, time);
+      return;
+    }
+    if (command !== 0x90) return;
+    this.onNote(note, velocity / 127, true, time);
     this.pending.push(note);
     clearTimeout(this.timer);
     this.timer = window.setTimeout(() => {

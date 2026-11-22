@@ -66,6 +66,23 @@ final class Db
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )$engine");
 
+        // earlier versions of a score (version history), newest kept, oldest pruned
+        $pdo->exec("CREATE TABLE IF NOT EXISTS score_versions (
+            id $id,
+            score_id $fk NOT NULL,
+            title {$str(200)} NOT NULL,
+            data $text NOT NULL,
+            created_at {$str(25)} NOT NULL,
+            FOREIGN KEY (score_id) REFERENCES scores(id) ON DELETE CASCADE
+        )$engine");
+
+        // revision counter for conflict detection (added after the first release)
+        try {
+            $pdo->exec('ALTER TABLE scores ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
+        } catch (\PDOException) {
+            // column already exists
+        }
+
         $pdo->exec("CREATE TABLE IF NOT EXISTS auth_attempts (
             id $id,
             ip {$str(45)} NOT NULL,
@@ -78,6 +95,7 @@ final class Db
             'CREATE INDEX idx_scores_user ON scores(user_id)',
             'CREATE INDEX idx_scores_public ON scores(visibility, updated_at)',
             'CREATE INDEX idx_attempts ON auth_attempts(ip, action, created_at)',
+            'CREATE INDEX idx_versions_score ON score_versions(score_id, created_at)',
         ] as $sql) {
             try {
                 $pdo->exec($driver === 'sqlite' ? str_replace('CREATE INDEX', 'CREATE INDEX IF NOT EXISTS', $sql) : $sql);

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Type-check, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # PHP runs the API integration test (src/cloud/server.test.ts) against a throw-away SQLite database
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_sqlite, mbstring
+          coverage: none
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint PHP
+        run: find server -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit and API tests
+        run: npm test
+
+      - name: Build
+        run: npx vite build
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7

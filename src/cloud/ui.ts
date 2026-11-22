@@ -4,6 +4,8 @@ import { api, ApiError, shareUrl, type ScoreMeta, type User, type Visibility } f
 
 const CLOUD_ID_KEY = 'pianissimo:cloudId';
 const SYNC_DELAY_MS = 8000;
+/** How often to check whether the score was saved from another tab or device. */
+const POLL_MS = 20000;
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -20,6 +22,8 @@ export class Cloud {
   private syncedJson = '';
   private syncTimer = 0;
   private saving = false;
+  /** A save was refused because the cloud copy changed elsewhere; auto-sync pauses until resolved. */
+  private conflict = false;
   /** Called when the account or sync state changes (to refresh the top bar). */
   onChange: () => void = () => {};
 
@@ -32,6 +36,10 @@ export class Cloud {
     editor.subscribe((kind) => {
       if (kind === 'score') this.scheduleSync();
     });
+    window.setInterval(() => void this.poll(), POLL_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void this.poll();
+    });
   }
 
   async init() {
@@ -41,7 +49,39 @@ export class Cloud {
       this.user = null; // server not running: the editor still works locally
     }
     if (!this.user) this.forget();
+    else if (this.scoreId) {
+      // reconnect to the cloud copy we were editing before the reload
+      try {
+        const { score } = await api.getScore(this.scoreId);
+        this.meta = score;
+        this.syncedJson = JSON.stringify(score.data);
+      } catch {
+        this.forget();
+      }
+    }
     this.onChange();
+  }
+
+  /** Notice saves made in another tab or on another device. */
+  private async poll() {
+    if (!this.user || !this.scoreId || !this.meta || this.saving || document.visibilityState !== 'visible') return;
+    let remote: ScoreMeta;
+    try {
+      remote = (await api.scoreInfo(this.scoreId)).score;
+    } catch {
+      return; // offline: try again later
+    }
+    if (remote.revision <= this.meta.revision || this.conflict) return;
+    if (this.status === 'Saved') {
+      // nothing local to lose: follow the newer version
+      const { score } = await api.getScore(this.scoreId);
+      this.confirmLoad(score.data);
+      this.link(score, JSON.stringify(this.editor.score));
+      this.toast('Updated with changes saved in another tab or device (Ctrl+Z goes back)');
+    } else {
+      this.conflict = true;
+      this.showConflict();
+    }
   }
 
   /** "Saved" / "Saving…" / "Unsaved changes" / "" (not in the library). */
@@ -69,7 +109,7 @@ export class Cloud {
   }
 
   // ------------------------------------------------------------------ saving
-  async save(): Promise<boolean> {
+  async save(force = false): Promise<boolean> {
     if (!this.user) {
       this.showAuth('Sign in to save this score to your library and open it on any device.', () => this.save());
       return false;
@@ -80,11 +120,17 @@ export class Cloud {
     try {
       if (this.scoreId) {
         try {
-          this.link((await api.updateScore(this.scoreId, { data: this.editor.score })).score, json);
+          const base = this.meta?.id === this.scoreId ? this.meta.revision : undefined;
+          this.link((await api.updateScore(this.scoreId, { data: this.editor.score, base_revision: base, force })).score, json);
+          this.conflict = false;
         } catch (err) {
           // the cloud copy was deleted elsewhere: save as a new one
           if (err instanceof ApiError && err.status === 404) this.link((await api.createScore(this.editor.score)).score, json);
-          else throw err;
+          else if (err instanceof ApiError && err.status === 409) {
+            this.conflict = true;
+            this.showConflict();
+            return false;
+          } else throw err;
         }
       } else {
         this.link((await api.createScore(this.editor.score)).score, json);
@@ -104,7 +150,7 @@ export class Cloud {
     if (!this.user || !this.scoreId) return;
     clearTimeout(this.syncTimer);
     this.syncTimer = window.setTimeout(() => {
-      if (this.status === 'Unsaved changes') void this.save();
+      if (this.status === 'Unsaved changes' && !this.conflict) void this.save();
     }, SYNC_DELAY_MS);
   }
 
@@ -151,10 +197,47 @@ export class Cloud {
             <a id="shareOpen" target="_blank" rel="noopener">Open ↗</a>
           </div>
         </div>
+      </div>
+      <div class="modal" id="conflictModal" hidden>
+        <div class="modal-card" role="alertdialog" aria-labelledby="conflictTitle">
+          <header><h2 id="conflictTitle">Changed somewhere else</h2><button class="close" data-close>✕</button></header>
+          <p class="hint">This score was saved from another tab or device after you opened it. Which version do you want to keep?
+          (The one you do not keep stays in <b>Version history</b>.)</p>
+          <div class="side-buttons">
+            <button class="primary small" id="conflictMine">Keep mine</button>
+            <button id="conflictTheirs">Load the other version</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal" id="historyModal" hidden>
+        <div class="modal-card wide">
+          <header><h2>Version history</h2><button class="close" data-close>✕</button></header>
+          <p class="hint">Earlier versions are kept automatically when you save (at most one every 5 minutes, the last 50).
+          Restoring loads a version into the editor; <kbd>Ctrl</kbd>+<kbd>Z</kbd> takes you back.</p>
+          <div id="historyList" class="lib-list"></div>
+        </div>
       </div>`;
     document.body.append(...Array.from(wrap.children));
 
-    for (const modal of ['authModal', 'libraryModal', 'shareModal']) {
+    this.el('conflictMine').addEventListener('click', async () => {
+      this.el('conflictModal').hidden = true;
+      if (await this.save(true)) this.toast('Saved your version (the other one is in Version history)');
+    });
+    this.el('conflictTheirs').addEventListener('click', async () => {
+      this.el('conflictModal').hidden = true;
+      if (!this.scoreId) return;
+      try {
+        const { score } = await api.getScore(this.scoreId);
+        this.confirmLoad(score.data);
+        this.link(score, JSON.stringify(this.editor.score));
+        this.conflict = false;
+        this.toast('Loaded the other version (Ctrl+Z brings back yours)');
+      } catch (ex) {
+        this.toast((ex as Error).message);
+      }
+    });
+
+    for (const modal of ['authModal', 'libraryModal', 'shareModal', 'conflictModal', 'historyModal']) {
       const m = this.el(modal);
       m.querySelector('[data-close]')!.addEventListener('click', () => (m.hidden = true));
       m.addEventListener('mousedown', (e) => {
@@ -318,6 +401,52 @@ export class Cloud {
       this.toast(`Opened “${score.title}”`);
     } catch (ex) {
       this.toast((ex as Error).message);
+    }
+  }
+
+  private showConflict() {
+    this.el('conflictModal').hidden = false;
+    this.el('conflictMine').focus();
+  }
+
+  async showHistory(): Promise<void> {
+    if (!this.user) return this.showAuth('Sign in to keep a history of your score.', () => this.showHistory());
+    if (!this.scoreId) {
+      this.toast('Save the score to your library first (Ctrl+S); history starts from there.');
+      return;
+    }
+    const id = this.scoreId;
+    const host = this.el('historyList');
+    this.el('historyModal').hidden = false;
+    host.innerHTML = '<p class="hint">Loading…</p>';
+    try {
+      const { versions } = await api.listVersions(id);
+      if (!versions.length) {
+        host.innerHTML = '<p class="hint">No earlier versions yet. They appear after you save changes.</p>';
+        return;
+      }
+      host.innerHTML = versions
+        .map(
+          (v) => `<div class="lib-row" data-id="${v.id}">
+            <div class="lib-main"><b>${new Date(v.created_at).toLocaleString()}</b><span>${esc(v.title)}</span></div>
+            <button data-act="restore">Restore</button>
+          </div>`,
+        )
+        .join('');
+      host.querySelectorAll<HTMLElement>('.lib-row').forEach((row) =>
+        row.querySelector('[data-act=restore]')!.addEventListener('click', async () => {
+          try {
+            const { version } = await api.getVersion(id, Number(row.dataset.id));
+            this.confirmLoad(version.data);
+            this.el('historyModal').hidden = true;
+            this.toast(`Restored the version from ${new Date(version.created_at).toLocaleString()} (Ctrl+Z undoes)`);
+          } catch (ex) {
+            this.toast((ex as Error).message);
+          }
+        }),
+      );
+    } catch (ex) {
+      host.innerHTML = `<p class="form-error">${esc((ex as Error).message)}</p>`;
     }
   }
 

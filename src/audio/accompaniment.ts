@@ -1,7 +1,9 @@
 import { chordVoicing } from '../model/harmony';
 import { allEvents } from '../model/score';
 import type { AccompanimentStyle, Score } from '../model/types';
-import type { TimedEvent, TimedNote } from './player';
+import { TPQ } from '../model/duration';
+import { contexts } from '../model/context';
+import type { TempoChange, TimedEvent, TimedNote } from './player';
 
 export const STYLES: { id: AccompanimentStyle; name: string }[] = [
   { id: 'block', name: 'Block chords (held)' },
@@ -19,7 +21,7 @@ const EPS = 1e-4;
  * of every bar it covers. Times follow the playback timeline, so repeats and
  * endings are respected. Notes are tagged with `s = staves.length` (their own channel).
  */
-export function accompanimentNotes(score: Score, events: TimedEvent[], length: number): TimedNote[] {
+export function accompanimentNotes(score: Score, events: TimedEvent[], length: number, tempos: TempoChange[] = []): TimedNote[] {
   const acc = score.accompaniment;
   if (!acc?.enabled) return [];
   const byId = new Map(allEvents(score).map((e) => [e.id, e]));
@@ -34,14 +36,26 @@ export function accompanimentNotes(score: Score, events: TimedEvent[], length: n
   }
   if (!changes.length) return [];
 
-  const barStarts = [...new Set(events.filter((e) => e.s === 0 && !e.v && e.i === 0).map((e) => e.time))].sort(
-    (a, b) => a - b,
-  );
-  const beat = (60 / score.tempo) * (4 / score.timeBeatType);
+  // bar starts along the playback; each bar knows its meter (beats can change from bar to bar)
+  const ctx = contexts(score);
+  const barEvents = events.filter((e) => e.s === 0 && !e.v && e.i === 0).sort((a, b) => a.time - b.time);
+  const barStarts = barEvents.map((e) => e.time);
+  const beatsOf = (time: number) => {
+    const k = Math.max(0, barStarts.findIndex((t, j) => time >= t - EPS && time < (barStarts[j + 1] ?? Infinity) - EPS));
+    return ctx[barEvents[k]?.m ?? 0]?.beats ?? score.timeBeats;
+  };
+  // seconds -> ticks through the tempo map (for MIDI export)
+  const toTick = (time: number) => {
+    const tc = [...tempos].reverse().find((x) => x.time <= time + EPS) ?? { tick: 0, time: 0, bpm: score.tempo };
+    return Math.round(tc.tick + ((time - tc.time) * tc.bpm * TPQ) / 60);
+  };
   const s = score.staves.length;
   const out: TimedNote[] = [];
   const add = (time: number, duration: number, midi: number, velocity: number) => {
-    if (duration > 0.02) out.push({ time, duration, midi, velocity, s });
+    if (duration > 0.02) {
+      const tick = toTick(time);
+      out.push({ time, duration, tick, ticks: Math.max(1, toTick(time + duration) - tick), midi, velocity, s });
+    }
   };
 
   changes.forEach((ch, k) => {
@@ -55,13 +69,14 @@ export function accompanimentNotes(score: Score, events: TimedEvent[], length: n
     for (const bar of bars) {
       const from = Math.max(bar.start, t0);
       const to = Math.min(bar.end, t1);
+      const beatsInBar = beatsOf(bar.start);
+      const beat = (bar.end - bar.start) / beatsInBar;
       // beat positions inside [from, to), plus the chord's own start if it falls between beats
       const beats: { time: number; index: number }[] = [];
       for (let b = 0, t = bar.start; t < to - EPS; b++, t = bar.start + b * beat) {
         if (t >= from - EPS) beats.push({ time: t, index: b });
       }
       if (!beats.length || beats[0].time > from + EPS) beats.unshift({ time: from, index: 0 });
-      const beatsInBar = Math.round((bar.end - bar.start) / beat);
       pattern(acc.style, v, beats, to, beat, beatsInBar, add);
     }
   });

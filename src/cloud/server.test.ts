@@ -108,6 +108,26 @@ describe.skipIf(!php)('PHP API', () => {
     expect((await alice.call('POST', '/scores', { data: { hello: 'world' } })).status).toBe(422);
   });
 
+  it('keeps earlier versions and refuses to overwrite a newer save', async () => {
+    const versions = await alice.call('GET', `/scores/${id}/versions`);
+    expect(versions.data.versions).toHaveLength(1); // the state before the rename
+    const old = await alice.call('GET', `/scores/${id}/versions/${versions.data.versions[0].id}`);
+    expect(old.data.version.data.title).toBe('Song for Bob');
+    expect((await bob.call('GET', `/scores/${id}/versions`)).status).toBe(404);
+
+    const meta = (await alice.call('GET', `/scores/${id}`)).data.score;
+    const data = { ...meta.data, composer: 'Alice B.' };
+    const first = await alice.call('PUT', `/scores/${id}`, { data, base_revision: meta.revision });
+    expect(first.data.score.revision).toBe(meta.revision + 1);
+    // a second tab still based on the old revision
+    const stale = await alice.call('PUT', `/scores/${id}`, { data: { ...data, composer: 'Other tab' }, base_revision: meta.revision });
+    expect(stale.status).toBe(409);
+    const forced = await alice.call('PUT', `/scores/${id}`, { data: { ...data, composer: 'Other tab' }, base_revision: meta.revision, force: true });
+    expect(forced.status).toBe(200);
+    // the 5-minute throttle keeps only one entry for these quick saves
+    expect((await alice.call('GET', `/scores/${id}/versions`)).data.versions).toHaveLength(1);
+  });
+
   it('keeps scores private to their owner', async () => {
     expect((await bob.call('GET', `/scores/${id}`)).status).toBe(404);
     expect((await bob.call('DELETE', `/scores/${id}`)).status).toBe(404);

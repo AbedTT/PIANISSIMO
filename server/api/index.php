@@ -99,13 +99,21 @@ if (preg_match('#^/scores/(\d+)(/duplicate)?$#', $path, $m)) {
             $respond(['score' => $scores->duplicate($id, $user['id'])], 201);
         }
     } elseif ($method === 'GET') {
-        $respond(['score' => $scores->get($id, $user['id'])]);
+        $respond(['score' => isset($_GET['meta']) ? $scores->info($id, $user['id']) : $scores->get($id, $user['id'])]);
     } elseif ($method === 'PUT') {
         $respond(['score' => $scores->update($id, $user['id'], Http::input($config['max_score_bytes'] + 10_000))]);
     } elseif ($method === 'DELETE') {
         $scores->delete($id, $user['id']);
         $respond(['ok' => true]);
     }
+}
+
+if (preg_match('#^/scores/(\d+)/versions(?:/(\d+))?$#', $path, $m) && $method === 'GET') {
+    $user = $auth->requireUser();
+    if (!empty($m[2])) {
+        $respond(['version' => $scores->version((int) $m[1], (int) $m[2], $user['id'])]);
+    }
+    $respond(['versions' => $scores->versions((int) $m[1], $user['id'])]);
 }
 
 if ($path === '/public' && $method === 'GET') {

@@ -40,6 +40,24 @@ export interface NoteEvent {
   extraVerses?: (Lyric | null)[];
   /** Chord symbol shown above the staff, e.g. "Cmaj7", "F#m7b5", "G/B". */
   harmony?: string;
+  /** Staff text above the note ("dolce", "rit.", "swing"…). */
+  text?: string;
+  /** Lines that start at this note and end at another note of the same lane. */
+  spans?: Span[];
+  /** Grace notes played just before this note (acciaccature, slashed). */
+  graces?: Grace[];
+}
+
+export type SpanKind = 'cresc' | 'dim' | 'pedal' | '8va' | '8vb';
+
+export interface Span {
+  kind: SpanKind;
+  /** id of the last note covered */
+  end: string;
+}
+
+export interface Grace {
+  pitches: Pitch[];
 }
 
 export interface Lyric {
@@ -76,10 +94,29 @@ export interface Measure {
   fine?: boolean;
   /** Jump instruction at the end of this bar. */
   jump?: JumpType;
+  /** Changes that take effect at this bar (and stay until the next change). */
+  key?: number;
+  time?: { beats: number; beatType: number };
+  /** Clef change per staff (null = no change for that staff). */
+  clefs?: (Clef | null)[];
+  tempo?: { bpm: number; text?: string };
+  /** Rehearsal mark shown in a box above the bar ("A", "B", "Verse"…). */
+  rehearsal?: string;
   /** Start a new line (system) after this bar. */
   lineBreak?: boolean;
   /** Start a new page after this bar (printing). */
   pageBreak?: boolean;
+  /** Review comments attached to this bar (not printed or exported). */
+  comments?: BarComment[];
+}
+
+export interface BarComment {
+  id: string;
+  author: string;
+  text: string;
+  /** ISO time. */
+  at: string;
+  resolved?: boolean;
 }
 
 export type JumpType = 'dc' | 'dcFine' | 'dcCoda' | 'ds' | 'dsFine' | 'dsCoda';
@@ -92,6 +129,19 @@ export const JUMP_LABELS: Record<JumpType, string> = {
   dsFine: 'D.S. al Fine',
   dsCoda: 'D.S. al Coda',
 };
+
+/** A named instrument made of consecutive staves (a piano has two). */
+export interface Part {
+  name: string;
+  /** Abbreviation shown on later systems ("Vln."). */
+  short: string;
+  /** Number of consecutive staves (from where the previous part ends). */
+  staves: number;
+  /** Written minus sounding pitch in semitones (B♭ clarinet = 2, F horn = 7). */
+  transpose?: number;
+  /** Instrument template id (see model/parts.ts). */
+  instrument?: string;
+}
 
 export type PageSize = 'a4' | 'letter';
 
@@ -124,6 +174,12 @@ export interface Score {
   timeBeatType: number;
   staves: StaffDef[];
   measures: Measure[];
+  /** Instruments; when missing the whole score is one part. */
+  parts?: Part[];
+  /** Show transposing instruments at concert pitch (default) or as their players read them. */
+  transposedView?: boolean;
+  /** Set on an extracted part: shown under the title. */
+  partName?: string;
   accompaniment?: Accompaniment;
   print?: PrintSettings;
 }

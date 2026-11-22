@@ -23,8 +23,17 @@ export interface ScoreMeta {
   composer: string;
   visibility: Visibility;
   slug: string;
+  /** Goes up by one on every saved change; used to detect saves made elsewhere. */
+  revision: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ScoreVersion {
+  id: number;
+  title: string;
+  created_at: string;
+  data?: Score;
 }
 
 export interface ScoreFull extends ScoreMeta {
@@ -89,9 +98,13 @@ export const api = {
   listScores: () => call<{ scores: ScoreMeta[] }>('GET', '/scores'),
   createScore: (data: Score) => call<{ score: ScoreMeta }>('POST', '/scores', { data }),
   getScore: (id: number) => call<{ score: ScoreFull }>('GET', `/scores/${id}`),
-  updateScore: (id: number, patch: { data?: Score; visibility?: Visibility; title?: string }) =>
+  scoreInfo: (id: number) => call<{ score: ScoreMeta }>('GET', `/scores/${id}?meta=1`),
+  updateScore: (id: number, patch: { data?: Score; visibility?: Visibility; base_revision?: number; force?: boolean }) =>
     call<{ score: ScoreMeta }>('PUT', `/scores/${id}`, patch),
   deleteScore: (id: number) => call<{ ok: true }>('DELETE', `/scores/${id}`),
+  listVersions: (id: number) => call<{ versions: ScoreVersion[] }>('GET', `/scores/${id}/versions`),
+  getVersion: (id: number, versionId: number) =>
+    call<{ version: ScoreVersion & { data: Score } }>('GET', `/scores/${id}/versions/${versionId}`),
   duplicateScore: (id: number) => call<{ score: ScoreMeta }>('POST', `/scores/${id}/duplicate`, {}),
 
   publicScore: (slug: string) => call<{ score: PublicScore & { data: Score } }>('GET', `/public/${encodeURIComponent(slug)}`),

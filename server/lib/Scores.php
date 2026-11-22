@@ -9,7 +9,10 @@ use PDO;
 final class Scores
 {
     private const VISIBILITY = ['private', 'unlisted', 'public'];
-    private const META = 'id, title, composer, visibility, slug, created_at, updated_at';
+    private const META = 'id, title, composer, visibility, slug, revision, created_at, updated_at';
+    /** A new history entry is kept at most this often while someone keeps saving. */
+    private const VERSION_EVERY_SECONDS = 300;
+    private const MAX_VERSIONS = 50;
 
     public function __construct(private PDO $db, private array $config)
     {
@@ -46,15 +49,29 @@ final class Scores
         return $meta;
     }
 
+    /** Metadata only (cheap; used to notice saves made elsewhere). */
+    public function info(int $id, int $userId): array
+    {
+        return $this->metaById($id, $userId);
+    }
+
     public function update(int $id, int $userId, array $patch): array
     {
-        $this->owned($id, $userId);
+        $current = $this->owned($id, $userId, ', data');
         $sets = [];
         $args = [];
         if (array_key_exists('data', $patch)) {
+            // optimistic concurrency: refuse to overwrite a newer save made elsewhere
+            $base = $patch['base_revision'] ?? null;
+            if ($base !== null && empty($patch['force']) && (int) $base !== (int) $current['revision']) {
+                throw new HttpError(409, 'This score was changed in another tab or device since you opened it.');
+            }
             [$json, $title, $composer] = $this->validate($patch['data']);
-            array_push($sets, 'data = ?', 'title = ?', 'composer = ?');
-            array_push($args, $json, $title, $composer);
+            if ($json !== $current['data']) {
+                $this->snapshot($id, $current);
+                array_push($sets, 'data = ?', 'title = ?', 'composer = ?', 'revision = revision + 1');
+                array_push($args, $json, $title, $composer);
+            }
         }
         if (array_key_exists('visibility', $patch)) {
             if (!in_array($patch['visibility'], self::VISIBILITY, true)) {
@@ -64,6 +81,9 @@ final class Scores
             $args[] = $patch['visibility'];
         }
         if (!$sets) {
+            if (array_key_exists('data', $patch)) {
+                return $this->meta($current); // saved data was identical
+            }
             throw new HttpError(422, 'Nothing to update.');
         }
         $sets[] = 'updated_at = ?';
@@ -71,6 +91,47 @@ final class Scores
         $args[] = $id;
         $this->db->prepare('UPDATE scores SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
         return $this->metaById($id, $userId);
+    }
+
+    /** Earlier versions of a score, newest first (without their data). */
+    public function versions(int $id, int $userId): array
+    {
+        $this->owned($id, $userId);
+        $st = $this->db->prepare('SELECT id, title, created_at FROM score_versions WHERE score_id = ? ORDER BY id DESC');
+        $st->execute([$id]);
+        return array_map(fn ($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'created_at' => $r['created_at']], $st->fetchAll());
+    }
+
+    /** One earlier version with its data. */
+    public function version(int $id, int $versionId, int $userId): array
+    {
+        $this->owned($id, $userId);
+        $st = $this->db->prepare('SELECT id, title, data, created_at FROM score_versions WHERE id = ? AND score_id = ?');
+        $st->execute([$versionId, $id]);
+        $row = $st->fetch();
+        if (!$row) {
+            throw new HttpError(404, 'That version no longer exists.');
+        }
+        return ['id' => (int) $row['id'], 'title' => $row['title'], 'created_at' => $row['created_at'], 'data' => json_decode($row['data'], true)];
+    }
+
+    /** Keep the state before a save, unless a version was kept only moments ago. */
+    private function snapshot(int $id, array $current): void
+    {
+        $last = $this->db->prepare('SELECT created_at FROM score_versions WHERE score_id = ? ORDER BY id DESC LIMIT 1');
+        $last->execute([$id]);
+        $at = $last->fetchColumn();
+        if ($at !== false && time() - strtotime((string) $at) < self::VERSION_EVERY_SECONDS) {
+            return;
+        }
+        $this->db->prepare('INSERT INTO score_versions (score_id, title, data, created_at) VALUES (?, ?, ?, ?)')
+            ->execute([$id, $current['title'], $current['data'], $current['updated_at']]);
+        $old = $this->db->prepare('SELECT id FROM score_versions WHERE score_id = ? ORDER BY id DESC LIMIT 1000 OFFSET ' . self::MAX_VERSIONS);
+        $old->execute([$id]);
+        $del = $this->db->prepare('DELETE FROM score_versions WHERE id = ?');
+        foreach ($old->fetchAll(PDO::FETCH_COLUMN) as $vid) {
+            $del->execute([$vid]);
+        }
     }
 
     public function delete(int $id, int $userId): void
@@ -167,6 +228,7 @@ final class Scores
             'composer' => $row['composer'],
             'visibility' => $row['visibility'],
             'slug' => $row['slug'],
+            'revision' => (int) ($row['revision'] ?? 1),
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],
         ];

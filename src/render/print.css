@@ -5,6 +5,7 @@
 }
 .print-page .pp-title { font: 600 26px Georgia, 'Times New Roman', serif; text-align: center; margin: 4mm 0 1mm; }
 .print-page .pp-composer { font: 14px Georgia, serif; text-align: right; margin-bottom: 4mm; }
+.print-page .pp-part { float: left; font-weight: 600; }
 .print-page .pp-running { font: italic 11px Georgia, serif; color: #555; margin-bottom: 3mm; }
 .print-page svg { display: block; }
 .print-page .pp-footer {

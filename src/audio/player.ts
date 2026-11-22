@@ -1,7 +1,8 @@
 import * as Tone from 'tone';
 import { TPQ } from '../model/duration';
 import { midiOf } from '../model/pitch';
-import { barTicks, eventTicks, laneOf, playOrder } from '../model/score';
+import { contexts } from '../model/context';
+import { eventTicks, laneOf, playOrder } from '../model/score';
 import { isRest, type Dynamic, type Pitch, type Score } from '../model/types';
 import { accompanimentNotes } from './accompaniment';
 import { GM_BASE, gmSampleUrls, soundById, type SoundDef } from './sounds';
@@ -20,7 +21,7 @@ export interface PlayOptions {
 /** Score notes plus the generated chord accompaniment. */
 export function fullTimeline(score: Score) {
   const t = timeline(score);
-  const backing = accompanimentNotes(score, t.events, t.length);
+  const backing = accompanimentNotes(score, t.events, t.length, t.tempos);
   return { ...t, notes: [...t.notes, ...backing].sort((a, b) => a.time - b.time) };
 }
 
@@ -28,6 +29,9 @@ export interface TimedNote {
   /** seconds */
   time: number;
   duration: number;
+  /** position in ticks along the playback (for MIDI export) */
+  tick: number;
+  ticks: number;
   midi: number;
   velocity: number;
   /** staff index */
@@ -38,6 +42,7 @@ export interface TimedEvent {
   time: number;
   /** seconds */
   dur: number;
+  tick: number;
   id: string;
   m: number;
   s: number;
@@ -46,67 +51,155 @@ export interface TimedEvent {
   v: number;
 }
 
+export interface TempoChange {
+  tick: number;
+  time: number;
+  bpm: number;
+}
+
 const VELOCITY: Record<Dynamic, number> = {
   ppp: 0.2, pp: 0.3, p: 0.42, mp: 0.55, mf: 0.67, f: 0.8, ff: 0.9, fff: 1, sfz: 1,
 };
 
-/** Flatten the score into sounding notes (ties merged) plus per-event times for the cursor. */
-export function timeline(score: Score): { notes: TimedNote[]; events: TimedEvent[]; length: number } {
-  const secPerTick = 60 / (score.tempo * TPQ);
+/** Grace notes are played this long before the beat (seconds), each. */
+const GRACE_SECONDS = 0.06;
+
+/**
+ * Flatten the score into sounding notes plus per-event times for the cursor.
+ * Follows the playback order (repeats, endings, jumps) and every bar's tempo; merges ties;
+ * applies dynamics, accents, staccato, hairpins (gradual volume), sustain pedal,
+ * 8va/8vb (sounding an octave away) and grace notes.
+ */
+export function timeline(score: Score): {
+  notes: TimedNote[];
+  events: TimedEvent[];
+  length: number;
+  tempos: TempoChange[];
+} {
   const notes: TimedNote[] = [];
   const events: TimedEvent[] = [];
-  let length = 0;
   const order = playOrder(score);
+  const ctx = contexts(score);
 
-  const bar = barTicks(score);
+  // start time/tick of every bar along the playback, and the tempo map
+  const barTime: number[] = [];
+  const barTick: number[] = [];
+  const tempos: TempoChange[] = [];
+  let t = 0;
+  let tk = 0;
+  for (const m of order) {
+    barTime.push(t);
+    barTick.push(tk);
+    if (!tempos.length || tempos[tempos.length - 1].bpm !== ctx[m].tempo) tempos.push({ tick: tk, time: t, bpm: ctx[m].tempo });
+    t += ctx[m].ticks * (60 / (ctx[m].tempo * TPQ));
+    tk += ctx[m].ticks;
+  }
+  const length = t;
+
   score.staves.forEach((_, s) => {
-   for (const v of [0, 1]) {
-    if (v && !score.measures.some((mm) => mm.voice2?.[s])) continue;
-    let tick = 0;
-    let velocity = VELOCITY.mf;
-    /** midi -> note still sounding because of a tie */
-    let held = new Map<number, TimedNote>();
-    order.forEach((m) => {
-      const laneEvents = laneOf(score.measures[m], s, v);
-      if (!laneEvents) {
-        // no second voice in this bar: time still passes
-        tick += bar;
-        held = new Map();
-        return;
-      }
-      laneEvents.forEach((e, i) => {
-        const len = eventTicks(e);
-        events.push({ time: tick * secPerTick, dur: len * secPerTick, id: e.id, m, s, i, v });
-        if (e.dynamic) velocity = VELOCITY[e.dynamic];
-        const nextHeld = new Map<number, TimedNote>();
-        if (!isRest(e)) {
-          const accent = e.articulations?.includes('accent') || e.articulations?.includes('marcato') ? 0.15 : 0;
-          const staccato = e.articulations?.includes('staccato') ? 0.5 : 1;
-          for (const p of e.pitches) {
-            const midi = midiOf(p);
-            const dur = len * secPerTick;
-            let n = held.get(midi);
-            if (n) n.duration += dur;
-            else {
-              n = { time: tick * secPerTick, duration: dur * staccato, midi, velocity: Math.min(1, velocity + accent), s };
-              notes.push(n);
-            }
-            if (e.tie) nextHeld.set(midi, n);
-          }
+    for (const v of [0, 1]) {
+      if (v && !score.measures.some((mm) => mm.voice2?.[s])) continue;
+      let velocity = VELOCITY.mf;
+      let held = new Map<number, TimedNote>(); // midi -> note still sounding because of a tie
+      // active lines on this lane
+      let hairpin: { kind: 'cresc' | 'dim'; end: string; from: number } | null = null;
+      let ottava = 0; // semitone shift while an 8va/8vb is active
+      let ottavaEnd: string | null = null;
+      let pedalNotes: TimedNote[] | null = null;
+      let pedalEnd: string | null = null;
+
+      order.forEach((m, k) => {
+        const spt = 60 / (ctx[m].tempo * TPQ);
+        const laneEvents = laneOf(score.measures[m], s, v);
+        if (!laneEvents) {
+          held = new Map(); // no second voice in this bar
+          return;
         }
-        held = nextHeld;
-        tick += len;
+        let off = 0; // ticks into the bar
+        laneEvents.forEach((e, i) => {
+          const len = eventTicks(e);
+          const time = barTime[k] + off * spt;
+          const tick = barTick[k] + off;
+          events.push({ time, dur: len * spt, tick, id: e.id, m, s, i, v });
+          if (e.dynamic) velocity = VELOCITY[e.dynamic];
+          // lines starting here
+          for (const sp of e.spans ?? []) {
+            if (sp.kind === 'cresc' || sp.kind === 'dim') hairpin = { kind: sp.kind, end: sp.end, from: velocity };
+            else if (sp.kind === 'pedal') {
+              pedalNotes = [];
+              pedalEnd = sp.end;
+            } else {
+              ottava = sp.kind === '8va' ? 12 : -12;
+              ottavaEnd = sp.end;
+            }
+          }
+          // hairpins move the volume step by step toward the next level
+          if (hairpin && !isRest(e)) {
+            const step = hairpin.kind === 'cresc' ? 0.05 : -0.05;
+            velocity = Math.max(0.15, Math.min(1, velocity + step));
+          }
+          const nextHeld = new Map<number, TimedNote>();
+          if (!isRest(e)) {
+            const accent = e.articulations?.includes('accent') || e.articulations?.includes('marcato') ? 0.15 : 0;
+            const staccato = e.articulations?.includes('staccato') ? 0.5 : 1;
+            // grace notes just before the beat
+            (e.graces ?? []).forEach((g, gi, all) => {
+              const gTime = Math.max(0, time - (all.length - gi) * GRACE_SECONDS);
+              for (const p of g.pitches) {
+                notes.push({
+                  time: gTime,
+                  duration: GRACE_SECONDS,
+                  tick: Math.max(0, tick - Math.round((all.length - gi) * GRACE_SECONDS / spt)),
+                  ticks: Math.max(1, Math.round(GRACE_SECONDS / spt)),
+                  midi: midiOf(p) + ottava,
+                  velocity: Math.min(1, velocity * 0.85),
+                  s,
+                });
+              }
+            });
+            for (const p of e.pitches) {
+              const midi = midiOf(p) + ottava;
+              let n = held.get(midi);
+              if (n) {
+                n.duration += len * spt;
+                n.ticks += len;
+              } else {
+                n = { time, duration: len * spt * staccato, tick, ticks: Math.max(1, Math.round(len * staccato)), midi, velocity: Math.min(1, velocity + accent), s };
+                notes.push(n);
+                if (pedalNotes) (pedalNotes as TimedNote[]).push(n);
+              }
+              if (e.tie) nextHeld.set(midi, n);
+            }
+          }
+          held = nextHeld;
+          // lines ending here
+          if (hairpin && e.id === hairpin.end) hairpin = null;
+          if (ottavaEnd && e.id === ottavaEnd) {
+            ottava = 0;
+            ottavaEnd = null;
+          }
+          if (pedalNotes && e.id === pedalEnd) {
+            // the pedal lifts at the end of this note: everything played under it rings until then
+            const lift = time + len * spt;
+            const liftTick = tick + len;
+            for (const n of pedalNotes as TimedNote[]) {
+              n.duration = Math.max(n.duration, lift - n.time);
+              n.ticks = Math.max(n.ticks, liftTick - n.tick);
+            }
+            pedalNotes = null;
+            pedalEnd = null;
+          }
+          off += len;
+        });
       });
-    });
-    length = Math.max(length, tick * secPerTick);
-   }
+    }
   });
   notes.sort((a, b) => a.time - b.time);
   events.sort((a, b) => a.time - b.time);
-  return { notes, events, length };
+  return { notes, events, length, tempos };
 }
 
-type Instrument = {
+export type Instrument = {
   triggerAttackRelease: (notes: string | string[], duration: number, time?: number, velocity?: number) => unknown;
   releaseAll?: (time?: number) => unknown;
 };
@@ -174,7 +267,11 @@ export class Player {
     inst.triggerAttackRelease(names, 0.6, undefined, 0.7);
   }
 
-  async play(score: Score, opts: PlayOptions = {}) {
+  /**
+   * Start playback. Resolves with when the music (after any count-in) starts, on the
+   * performance.now() clock, so a recording can line up played notes with the beat.
+   */
+  async play(score: Score, opts: PlayOptions = {}): Promise<{ musicStartsAt: number }> {
     this.stop();
     await Tone.start();
     const soundIds = [...score.staves.map((st) => st.sound ?? 'piano'), score.accompaniment?.sound ?? 'piano'];
@@ -198,9 +295,15 @@ export class Player {
     } else if (opts.fromId) {
       start = events.find((e) => e.id === opts.fromId)?.time ?? 0;
     }
-    const barLen = (60 / score.tempo) * (4 / score.timeBeatType) * score.timeBeats;
-    const beat = (60 / score.tempo) * (4 / score.timeBeatType);
-    const lead = opts.countIn ? barLen : 0;
+    // bar starts along the playback with their length and number of beats (meter/tempo can change)
+    const ctx = contexts(score);
+    const barEvents = events.filter((e) => e.s === 0 && !e.v && e.i === 0);
+    const bars = barEvents.map((e, k) => {
+      const endTime = barEvents[k + 1]?.time ?? length;
+      return { time: e.time, beats: ctx[e.m].beats, beat: (endTime - e.time) / ctx[e.m].beats };
+    });
+    const firstBar = bars.find((b) => b.time >= start - 1e-6) ?? bars[0];
+    const lead = opts.countIn && firstBar ? firstBar.beat * firstBar.beats : 0;
 
     const transport = Tone.getTransport();
     transport.cancel();
@@ -221,15 +324,14 @@ export class Player {
     ];
     // metronome clicks on every beat of the bars being played (and the count-in bar)
     if (opts.metronome || opts.countIn) {
-      const bars = events.filter((e) => e.s === 0 && !e.v && e.i === 0).map((e) => e.time);
       const clicks: Item[] = [];
-      if (opts.countIn) {
-        for (let b = 0; b < score.timeBeats; b++) clicks.push({ time: b * beat, kind: 'c', accent: b === 0 });
+      if (opts.countIn && firstBar) {
+        for (let b = 0; b < firstBar.beats; b++) clicks.push({ time: b * firstBar.beat, kind: 'c', accent: b === 0 });
       }
       if (opts.metronome) {
-        for (const bt of bars) {
-          for (let b = 0; b < score.timeBeats; b++) {
-            const t = bt + b * beat;
+        for (const bar of bars) {
+          for (let b = 0; b < bar.beats; b++) {
+            const t = bar.time + b * bar.beat;
             if (within(t)) clicks.push({ time: lead + t - start, kind: 'c', accent: b === 0 });
           }
         }
@@ -258,6 +360,7 @@ export class Player {
       this.stopTimer = window.setTimeout(() => this.stop(), (lead + end - start + 1.5) * 1000);
     }
     transport.start('+0.05');
+    return { musicStartsAt: performance.now() + 50 + lead * 1000 };
   }
 
   private click: Tone.Synth | null = null;
@@ -289,14 +392,14 @@ export class Player {
   }
 }
 
-function salamanderUrls(): Record<string, string> {
+export function salamanderUrls(): Record<string, string> {
   const urls: Record<string, string> = {};
   for (let o = 1; o <= 7; o++) for (const n of ['A', 'C', 'D#', 'F#']) urls[`${n}${o}`] = `${n.replace('#', 's')}${o}.mp3`;
   return urls;
 }
 
 /** Sounds generated in the browser (no download). */
-function makeSynth(kind: NonNullable<SoundDef['synth']>): Instrument {
+export function makeSynth(kind: NonNullable<SoundDef['synth']>): Instrument {
   let synth: Tone.PolySynth;
   switch (kind) {
     case 'pad':

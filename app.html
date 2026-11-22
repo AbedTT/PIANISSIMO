@@ -19,13 +19,18 @@
             <button data-cmd="download">Pianissimo file (.json backup)</button>
             <button data-cmd="exportXml">MusicXML (.musicxml)</button>
             <button data-cmd="exportMidi">MIDI (.mid)</button>
+            <button data-cmd="exportWav">Audio (.wav)</button>
+            <button data-cmd="exportPng">Image (.png)</button>
+            <button data-cmd="exportSvg">Image (.svg)</button>
             <button data-cmd="print">PDF / Print</button>
+            <button data-cmd="history">Version history…</button>
           </div>
         </div>
       </nav>
       <div class="transport">
         <button id="play" class="play" data-cmd="play" title="Play / stop (Space)">▶</button>
         <button id="midiBtn" class="midi-btn" data-cmd="midi" title="MIDI keyboard input (Shift+M)">🎹 MIDI</button>
+        <button id="recBtn" class="midi-btn" data-cmd="record" title="Record from a MIDI keyboard (Shift+R)">● Rec</button>
         <label class="tempo" title="Tempo (quarter notes per minute)">♩ = <input id="tempo" type="number" min="20" max="300" /></label>
       </div>
       <div class="right-actions">
@@ -55,13 +60,15 @@
             <input id="composer" class="composer-input" spellcheck="false" placeholder="Composer" aria-label="Composer" />
           </div>
           <div class="score-wrap" id="scoreWrap">
-            <div id="score"></div>
+            <div id="score" role="application" aria-roledescription="score editor"
+            aria-label="Score. Type the letters A to G to write notes, arrows to move, question mark for all shortcuts."></div>
             <div id="selection"></div>
             <div id="cursor" class="cursor"></div>
             <div id="playhead" class="playhead"></div>
             <div id="ghost" class="ghost"><span></span></div>
             <input id="textEntry" class="text-entry" hidden autocomplete="off" spellcheck="false" />
             <div id="breakMarks"></div>
+            <div id="commentMarks"></div>
             <div id="verseBadge" class="verse-badge" hidden></div>
           </div>
         </div>
@@ -84,6 +91,8 @@
           <option value="alto">Alto staff</option>
           <option value="treble,treble">Two treble staves</option>
         </select></label>
+        <button data-cmd="instruments" class="side-wide">🎻 Instruments…</button>
+        <label class="check"><input type="checkbox" id="transposedToggle" /> Transposed score (as players read it)</label>
         <h3>Sounds</h3>
         <div id="sounds"></div>
         <h3>Chord accompaniment</h3>
@@ -96,6 +105,15 @@
           <button data-cmd="addBarEnd">+ Add bar</button>
           <button data-cmd="removeBar">− Delete bar</button>
         </div>
+        <h3>View</h3>
+        <label>Theme <select id="themeSelect">
+          <option value="auto">Automatic</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select></label>
+        <label>Language <select id="langSelect"></select></label>
+        <label class="check"><input type="checkbox" id="keysToggle" /> On-screen keyboard</label>
+        <button class="side-wide" data-cmd="tutorial">🎓 Start the tutorial</button>
         <h3>Quick start</h3>
         <ol class="tips">
           <li>Pick a length: <kbd>1</kbd>…<kbd>7</kbd> (whole … 64th), <kbd>.</kbd> for dotted</li>
@@ -114,7 +132,8 @@
       </aside>
     </main>
 
-    <footer class="status" id="status"></footer>
+    <div id="pianoKeysHost"></div>
+    <footer class="status" id="status" aria-live="off"></footer>
 
     <div class="modal" id="helpModal" hidden>
       <div class="modal-card wide">
@@ -133,6 +152,9 @@
     <div class="modal" id="newModal" hidden>
       <div class="modal-card">
         <header><h2>New score</h2><button class="close" data-close>✕</button></header>
+        <h4 class="new-sub">Start from a template</h4>
+        <div class="templates" id="templateList"></div>
+        <h4 class="new-sub">Or set it up yourself</h4>
         <form id="newForm" class="new-form">
           <label>Title <input name="title" value="Untitled score" /></label>
           <label>Composer <input name="composer" /></label>
@@ -161,6 +183,14 @@
               <option value="treble:alto_sax">Saxophone</option>
               <option value="treble:trumpet">Trumpet</option>
               <option value="bass:trombone">Trombone</option>
+            </optgroup>
+            <optgroup label="Ensembles">
+              <option value="parts:violin,violin,viola,cello">String quartet</option>
+              <option value="parts:soprano,alto,tenor,bass_voice,piano">SATB choir + piano</option>
+              <option value="parts:flute,oboe,clarinet,horn,bassoon">Wind quintet</option>
+              <option value="parts:trumpet,trumpet,horn,trombone,tuba">Brass quintet</option>
+              <option value="parts:alto_sax,trumpet,piano,contrabass">Jazz combo</option>
+              <option value="parts:voice,guitar">Voice + guitar</option>
             </optgroup>
             <optgroup label="Other">
               <option value="treble:music_box">Music box</option>
@@ -205,6 +235,7 @@
             <option value="a4">A4 (210 × 297 mm)</option>
             <option value="letter">US Letter (8.5 × 11 in)</option>
           </select></label>
+          <label>Print <select id="printWhat"><option value="score">Full score</option></select></label>
           <label>Staff size <select id="staffSize">
             <option value="0.65">Small (more bars per line)</option>
             <option value="0.8">Medium</option>
@@ -216,6 +247,49 @@
         </div>
         <p class="hint">Tip: <kbd>Ctrl</kbd>+<kbd>Enter</kbd> forces a new line after a bar, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Enter</kbd> a new page.</p>
         <div id="printPreview" class="print-preview"></div>
+      </div>
+    </div>
+    <div class="modal" id="barModal" hidden>
+      <div class="modal-card">
+        <header><h2>Bar settings · <span id="barTitle"></span></h2><button class="close" data-close>✕</button></header>
+        <p class="hint" id="barHint"></p>
+        <form id="barForm" class="new-form">
+          <label>Key <select id="barKey"></select></label>
+          <label>Time
+            <span class="row"><input id="barBeats" type="number" min="1" max="16" style="width:64px" /> /
+              <select id="barBeatType"><option>2</option><option>4</option><option>8</option><option>16</option></select></span>
+          </label>
+          <label>Tempo (♩ =) <input id="barBpm" type="number" min="20" max="300" /></label>
+          <label>Tempo word <input id="barTempoText" placeholder="e.g. Allegro, rit." maxlength="40" /></label>
+          <label>Rehearsal mark <input id="barRehearsal" placeholder="e.g. A, Verse" maxlength="20" /></label>
+          <div id="barClefs" class="bar-clefs"></div>
+          <button type="button" id="barClear">Remove all changes at this bar</button>
+          <button type="submit" class="primary">Apply</button>
+        </form>
+      </div>
+    </div>
+    <div class="modal" id="partsModal" hidden>
+      <div class="modal-card wide">
+        <header><h2>Instruments</h2><button class="close" data-close>✕</button></header>
+        <p class="hint">Each instrument is a part with its own staves and sound. Transposing instruments (B♭ clarinet, F horn…) are stored at concert pitch; switch on <b>Transposed score</b> to see what the players read.</p>
+        <div id="partsList" class="parts-list"></div>
+        <div class="parts-add">
+          <select id="partAddSelect"></select>
+          <button class="primary small" id="partAddBtn">+ Add instrument</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal" id="commentsModal" hidden>
+      <div class="modal-card wide">
+        <header><h2>Comments</h2><button class="close" data-close>✕</button></header>
+        <p class="hint" id="commentsHint"></p>
+        <div id="commentsList" class="comments-list"></div>
+        <form id="commentForm" class="comment-form">
+          <textarea id="commentText" rows="3" maxlength="1000" placeholder="Write a comment on this bar…" aria-label="Comment text"></textarea>
+          <button type="submit" class="primary small">Add comment</button>
+        </form>
+        <h4 class="new-sub">All open comments</h4>
+        <div id="commentsAll" class="comments-all"></div>
       </div>
     </div>
     <div id="printPages" class="print-pages"></div>

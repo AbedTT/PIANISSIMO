@@ -33,13 +33,23 @@ export interface AppActions {
   showSearch(): void;
   toggleMidi(): void;
   notify(message: string): void;
-  startText(kind: 'lyric' | 'chord'): void;
+  startText(kind: 'lyric' | 'chord' | 'text'): void;
+  showBarSettings(): void;
+  showInstruments(): void;
+  exportAudio(): void;
+  exportImage(kind: 'png' | 'svg'): void;
+  toggleRecording(): void;
   chooseSound(): void;
   showTranspose(): void;
   downloadFile(): void;
   showNavMenu(): void;
   openLibrary(): void;
   share(): void;
+  showComments(): void;
+  showHistory(): void;
+  togglePianoKeys(): void;
+  toggleTheme(): void;
+  startTutorial(): void;
 }
 
 const STEPS: Step[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -127,6 +137,21 @@ export const COMMANDS: Command[] = [
     run: (ed) => ed.toggleTriplet(),
     active: (ed) => ed.inputTriplet,
   },
+  ...(
+    [
+      ['duplet', 'Duplet (2 in the time of 3)', 'Shift+Digit2', { actual: 2, normal: 3 }, '2'],
+      ['quintuplet', 'Quintuplet (5 in the time of 4)', 'Shift+Digit5', { actual: 5, normal: 4 }, '5'],
+      ['sextuplet', 'Sextuplet (6 in the time of 4)', 'Shift+Digit6', { actual: 6, normal: 4 }, '6'],
+    ] as const
+  ).map<Command>(([id, label, key, ratio, n]) => ({
+    id,
+    label,
+    group: 'Durations',
+    keys: [key],
+    icon: `<span class="tuplet-icon">${n}</span>`,
+    run: (ed) => ed.toggleTuplet(ratio),
+    active: (ed) => ed.inputTuplet?.actual === ratio.actual && ed.inputTuplet?.normal === ratio.normal,
+  })),
   {
     id: 'dot',
     label: 'Dotted',
@@ -150,6 +175,36 @@ export const COMMANDS: Command[] = [
   { id: 'octaveUp', label: 'Octave up', group: 'Pitch', keys: ['Ctrl+ArrowUp'], run: (ed) => ed.octave(1) },
   { id: 'octaveDown', label: 'Octave down', group: 'Pitch', keys: ['Ctrl+ArrowDown'], run: (ed) => ed.octave(-1) },
   { id: 'tie', label: 'Tie to next note', group: 'Notes', keys: ['Comma'], icon: '⁀', run: (ed) => ed.toggleTie() },
+  ...(
+    [
+      ['cresc', 'Crescendo hairpin (to next note, or over selection)', 'Shift+Comma', '&lt;'],
+      ['dim', 'Diminuendo hairpin (to next note, or over selection)', 'Shift+Period', '&gt;'],
+      ['pedal', 'Sustain pedal (to next note, or over selection)', 'KeyP', 'Ped'],
+      ['8va', '8va: play an octave higher (to next note, or over selection)', 'Ctrl+Shift+Digit8', '8va'],
+      ['8vb', '8vb: play an octave lower (to next note, or over selection)', 'Ctrl+Shift+Digit9', '8vb'],
+    ] as const
+  ).map<Command>(([kind, label, key, icon]) => ({
+    id: `span-${kind}`,
+    label,
+    group: 'Lines',
+    keys: [key],
+    icon: `<span class="text-icon">${icon}</span>`,
+    run: (ed, app) => {
+      const on = ed.toggleSpan(kind);
+      app.notify(`${label.split(' (')[0].split(':')[0]} ${on ? 'added' : 'removed'}`);
+    },
+  })),
+  {
+    id: 'grace',
+    label: 'Add a grace note before the note',
+    group: 'Notes',
+    keys: ['Alt+KeyG'],
+    icon: '<span class="text-icon">♪˙</span>',
+    run: (ed) => ed.addGrace(),
+  },
+  { id: 'graceClear', label: 'Remove grace notes', group: 'Notes', keys: ['Alt+Shift+KeyG'], run: (ed) => ed.clearGraces() },
+  { id: 'graceUp', label: 'Grace notes up a step', group: 'Notes', run: (ed) => ed.shiftGraces(1) },
+  { id: 'graceDown', label: 'Grace notes down a step', group: 'Notes', run: (ed) => ed.shiftGraces(-1) },
   { id: 'slur', label: 'Slur (to next note, or over selection)', group: 'Notes', keys: ['KeyS'], icon: '◠', run: (ed) => ed.toggleSlur() },
 
   // ---- articulations / dynamics (number row when palette selected) ----
@@ -300,6 +355,47 @@ export const COMMANDS: Command[] = [
     run: (ed) => ed.clearNav(),
   },
   {
+    id: 'instruments',
+    label: 'Instruments… (add, remove, reorder parts)',
+    group: 'Score',
+    keys: ['Alt+KeyI'],
+    run: (_, app) => app.showInstruments(),
+  },
+  {
+    id: 'transposedView',
+    label: 'Transposed score / concert pitch',
+    group: 'Score',
+    keys: ['Alt+Shift+KeyT'],
+    run: (ed, app) => app.notify(ed.toggleTransposedView() ? 'Transposed score: instruments as their players read them' : 'Concert pitch'),
+    active: (ed) => !!ed.score.transposedView,
+  },
+  {
+    id: 'barSettings',
+    label: 'Bar settings… (key, time, clef or tempo change at this bar)',
+    group: 'Bars',
+    keys: ['Alt+KeyB'],
+    icon: '<span class="text-icon">Bar</span>',
+    run: (_, app) => app.showBarSettings(),
+    active: (ed) => {
+      const b = ed.score.measures[ed.cursor.m];
+      return !!b && (b.key !== undefined || !!b.time || !!b.tempo || !!b.clefs?.some((c) => c));
+    },
+  },
+  {
+    id: 'rehearsal',
+    label: 'Rehearsal mark (A, B, C…) at this bar',
+    group: 'Bars',
+    keys: ['Alt+KeyR'],
+    icon: '<span class="text-icon rehearsal-icon">A</span>',
+    run: (ed, app) => {
+      const m = ed.cursor.m;
+      const has = !!ed.score.measures[m].rehearsal;
+      ed.setBarChanges(m, { rehearsal: has ? null : ed.nextRehearsalLetter(m) });
+      app.notify(has ? 'Rehearsal mark removed' : `Rehearsal mark ${ed.score.measures[m].rehearsal}`);
+    },
+    active: (ed) => !!ed.score.measures[ed.cursor.m]?.rehearsal,
+  },
+  {
     id: 'lineBreak',
     label: 'Line break after this bar',
     group: 'Layout',
@@ -398,11 +494,42 @@ export const COMMANDS: Command[] = [
   { id: 'share', label: 'Share a link', group: 'File', keys: ['Alt+KeyS'], run: (_, app) => app.share() },
   { id: 'exportXml', label: 'Export MusicXML', group: 'File', keys: ['Ctrl+Shift+KeyE'], run: (_, app) => app.exportMusicXML() },
   { id: 'exportMidi', label: 'Export MIDI', group: 'File', keys: ['Ctrl+Shift+KeyM'], run: (_, app) => app.exportMidi() },
+  { id: 'exportWav', label: 'Export audio (WAV)', group: 'File', run: (_, app) => app.exportAudio() },
+  { id: 'exportPng', label: 'Export image (PNG)', group: 'File', run: (_, app) => app.exportImage('png') },
+  { id: 'exportSvg', label: 'Export image (SVG)', group: 'File', run: (_, app) => app.exportImage('svg') },
+  {
+    id: 'record',
+    label: 'Record from a MIDI keyboard (count-in, then play along)',
+    group: 'Playback',
+    keys: ['Shift+KeyR'],
+    icon: '<span class="rec-dot">●</span>',
+    run: (_, app) => app.toggleRecording(),
+  },
   { id: 'print', label: 'Print / Save as PDF (page layout preview)', group: 'File', keys: ['Ctrl+KeyP'], run: (_, app) => app.print() },
   { id: 'midi', label: 'MIDI keyboard input on/off', group: 'Interface', keys: ['Shift+KeyM'], icon: '🎹', run: (_, app) => app.toggleMidi() },
+  {
+    id: 'comment',
+    label: 'Comment on this bar',
+    group: 'Review',
+    keys: ['Ctrl+Alt+KeyM'],
+    icon: '💬',
+    run: (_, app) => app.showComments(),
+  },
+  { id: 'history', label: 'Version history (restore an earlier save)', group: 'File', keys: ['Ctrl+Alt+KeyH'], run: (_, app) => app.showHistory() },
+  {
+    id: 'pianoKeys',
+    label: 'On-screen keyboard (for touch screens and mouse)',
+    group: 'Interface',
+    keys: ['Shift+KeyK'],
+    icon: '🎹',
+    run: (_, app) => app.togglePianoKeys(),
+  },
+  { id: 'theme', label: 'Dark mode on / off', group: 'Interface', keys: ['Ctrl+Alt+KeyD'], icon: '◐', run: (_, app) => app.toggleTheme() },
+  { id: 'tutorial', label: 'Interactive tutorial', group: 'Interface', run: (_, app) => app.startTutorial() },
   { id: 'help', label: 'Keyboard shortcuts', group: 'Interface', keys: ['Shift+Slash'], icon: '?', run: (_, app) => app.showHelp() },
   { id: 'search', label: 'Search commands', group: 'Interface', keys: ['Ctrl+Shift+KeyP', 'F1'], run: (_, app) => app.showSearch() },
   { id: 'lyrics', label: 'Type lyrics (Space = next note, - = hyphen)', group: 'Text', keys: ['Ctrl+KeyL'], icon: '<span class="text-icon">La</span>', run: (_, app) => app.startText('lyric') },
+  { id: 'staffText', label: 'Type staff text (dolce, rit., swing…)', group: 'Text', keys: ['Ctrl+KeyE'], icon: '<span class="text-icon"><i>Txt</i></span>', run: (_, app) => app.startText('text') },
   { id: 'chords', label: 'Type chord symbols (Space = next note)', group: 'Text', keys: ['Ctrl+KeyK'], icon: '<span class="text-icon">C7</span>', run: (_, app) => app.startText('chord') },
   { id: 'sound', label: 'Choose the sound (instrument) of this staff', group: 'Playback', run: (_, app) => app.chooseSound() },
 ];

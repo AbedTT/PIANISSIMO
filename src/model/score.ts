@@ -1,19 +1,29 @@
+import { contextAt, contexts } from './context';
 import { fill, largestFitting, measureTicks, ticksOf, type Piece } from './duration';
-import { isRest, type Measure, type NoteEvent, type Pitch, type Score, type StaffDef } from './types';
+import { isRest, type DurationType, type Measure, type NoteEvent, type Pitch, type Score, type StaffDef, type Tuplet } from './types';
 
 let counter = 0;
 export const uid = () => `e${Date.now().toString(36)}${(counter++).toString(36)}`;
 
-export function restsFor(ticks: number): NoteEvent[] {
-  return fill(ticks).map(({ type, dots, tuplet }) => ({ id: uid(), pitches: [], type, dots, ...(tuplet ? { tuplet } : {}) }));
+export function restsFor(ticks: number, prefer?: Tuplet, preferType?: DurationType): NoteEvent[] {
+  return fill(ticks, prefer, preferType).map(({ type, dots, tuplet }) => ({ id: uid(), pitches: [], type, dots, ...(tuplet ? { tuplet } : {}) }));
 }
 
-export function barTicks(score: Score): number {
-  return measureTicks(score.timeBeats, score.timeBeatType);
+/** Ticks in bar `m` (time signatures can change from bar to bar). */
+export function barTicks(score: Score, m = 0): number {
+  if (!score.measures.length) return measureTicks(score.timeBeats, score.timeBeatType);
+  return contextAt(score, m).ticks;
 }
 
-export function emptyMeasure(score: Score): Measure {
-  return { staves: score.staves.map(() => restsFor(barTicks(score))) };
+/** Absolute tick where bar `m` starts (score order). */
+export function barStart(score: Score, m: number): number {
+  return contextAt(score, m).start;
+}
+
+/** A bar of rests, as long as bar `m` would be. */
+export function emptyMeasure(score: Score, m = score.measures.length - 1): Measure {
+  const ticks = score.measures.length ? barTicks(score, Math.max(0, m)) : measureTicks(score.timeBeats, score.timeBeatType);
+  return { staves: score.staves.map(() => restsFor(ticks)) };
 }
 
 export function newScore(opts: Partial<Pick<Score, 'title' | 'composer' | 'tempo' | 'keyFifths' | 'timeBeats' | 'timeBeatType'>> & {
@@ -63,7 +73,7 @@ export function ensureLane(score: Score, m: number, s: number, v = 0): NoteEvent
   const measure = score.measures[m];
   let events = laneOf(measure, s, v);
   if (!events) {
-    events = restsFor(barTicks(score));
+    events = restsFor(barTicks(score, m));
     setLane(measure, s, v, events);
   }
   return events;
@@ -110,7 +120,7 @@ export function writeAt(
   v = 0,
 ): number {
   const events = ensureLane(score, m, s, v);
-  const bar = barTicks(score);
+  const bar = barTicks(score, m);
   const t = startTick(events, Math.min(index, events.length));
   let { type, dots, tuplet } = value;
   if (t + ticksOf(type, dots, tuplet) > bar) {
@@ -141,7 +151,7 @@ export function writeAt(
     const eEnd = pos + eventTicks(e);
     pos = eEnd;
     if (eEnd <= end) continue; // fully overwritten
-    if (eStart < end) after.push(...restsFor(eEnd - end)); // partially overwritten
+    if (eStart < end) after.push(...restsFor(eEnd - end, tuplet, tuplet ? type : undefined)); // partially overwritten
     else after.push(e);
   }
   const tidy = tidyRests([...before, written, ...after], written.id);
@@ -216,21 +226,33 @@ export function clearEvent(score: Score, m: number, s: number, index: number, v 
 }
 
 export function insertMeasure(score: Score, at: number) {
-  score.measures.splice(at, 0, emptyMeasure(score));
+  // the new bar takes the time signature in effect where it is inserted
+  score.measures.splice(at, 0, emptyMeasure(score, Math.max(0, at - 1)));
 }
 
 export function removeMeasure(score: Score, at: number) {
   if (score.measures.length <= 1) {
-    score.measures[0] = emptyMeasure(score);
+    score.measures[0] = emptyMeasure(score, 0);
     return;
   }
+  // keep changes that started at the removed bar by moving them to the next one
+  const gone = score.measures[at];
+  const next = score.measures[at + 1];
+  if (next) {
+    if (gone.key !== undefined && next.key === undefined) next.key = gone.key;
+    if (gone.time && !next.time) next.time = gone.time;
+    if (gone.tempo && !next.tempo) next.tempo = gone.tempo;
+    if (gone.clefs && !next.clefs) next.clefs = gone.clefs;
+  }
   score.measures.splice(at, 1);
+  refitMeasures(score);
 }
 
-/** Re-fit every bar after a time-signature change: truncate overflow, pad with rests. */
+/** Re-fit every bar to its time signature: truncate overflow, pad with rests. */
 export function refitMeasures(score: Score) {
-  const bar = barTicks(score);
-  for (const measure of score.measures) {
+  const ctx = contexts(score);
+  score.measures.forEach((measure, m) => {
+    const bar = ctx[m].ticks;
     const fit = (events: NoteEvent[]) => {
       const out: NoteEvent[] = [];
       let t = 0;
@@ -251,15 +273,18 @@ export function refitMeasures(score: Score) {
       if (t < bar) out.push(...restsFor(bar - t));
       return out;
     };
-    measure.staves = measure.staves.map(fit);
-    if (measure.voice2) measure.voice2 = measure.voice2.map((l) => (l ? fit(l) : null));
-  }
+    // bars that already fit are left untouched (keeps ids, ties and rest spelling)
+    const fits = (l: NoteEvent[]) => l.reduce((a, e) => a + eventTicks(e), 0) === bar;
+    measure.staves = measure.staves.map((l) => (fits(l) ? l : fit(l)));
+    if (measure.voice2) measure.voice2 = measure.voice2.map((l) => (l ? (fits(l) ? l : fit(l)) : null));
+  });
 }
 
 /** Make sure every measure has one event list per staff. */
 export function syncStaves(score: Score) {
   for (const measure of score.measures) {
-    while (measure.staves.length < score.staves.length) measure.staves.push(restsFor(barTicks(score)));
+    const m = score.measures.indexOf(measure);
+    while (measure.staves.length < score.staves.length) measure.staves.push(restsFor(barTicks(score, m)));
     measure.staves.length = score.staves.length;
     if (measure.voice2 && measure.voice2.length > score.staves.length) measure.voice2.length = score.staves.length;
   }
@@ -360,4 +385,147 @@ export function tupletGroups(events: NoteEvent[]): number[][] {
   });
   flush();
   return out;
+}
+
+/**
+ * Re-bar the music from bar `from` on after a time-signature change: every lane's notes
+ * flow into the new bar lengths in order, notes crossing a bar line are split and tied,
+ * tuplets that do not fit move to the next bar, and bars are added at the end if needed.
+ * Nothing is lost (unlike trimming each bar).
+ */
+export function reflow(score: Score, from: number) {
+  const staves = score.staves.length;
+  const lanesToFlow: { s: number; v: number; events: NoteEvent[] }[] = [];
+  for (let s = 0; s < staves; s++) {
+    for (const v of [0, 1]) {
+      if (v && !score.measures.slice(from).some((m) => m.voice2?.[s])) continue;
+      // the old stream (a missing voice 2 counts as a bar of rest so the voices stay aligned)
+      const stream: NoteEvent[] = [];
+      score.measures.slice(from).forEach((bar) => {
+        const l = laneOf(bar, s, v);
+        if (l) stream.push(...l);
+        // no second voice here: rest for the bar's (old) length, taken from voice 1
+        else stream.push(...restsFor(bar.staves[s].reduce((a, e) => a + eventTicks(e), 0)));
+      });
+      // trailing rests carry no music
+      let last = stream.length - 1;
+      while (last >= 0 && isRest(stream[last])) last--;
+      lanesToFlow.push({ s, v, events: stream.slice(0, last + 1) });
+    }
+  }
+
+  // write each stream into the new bar lengths
+  const ctxOf = (m: number) => barTicks(score, Math.min(m, score.measures.length - 1));
+  const result = lanesToFlow.map(({ s, v, events }) => {
+    const bars: NoteEvent[][] = [[]];
+    let m = from;
+    let used = 0;
+    const room = () => ctxOf(m) - used;
+    const nextBar = () => {
+      if (room() > 0) bars[bars.length - 1].push(...restsFor(room()));
+      bars.push([]);
+      m++;
+      used = 0;
+    };
+    for (const e of events) {
+      let remaining = eventTicks(e);
+      if (e.tuplet && remaining > room()) nextBar(); // tuplets do not split
+      let first = true;
+      let prev: NoteEvent | null = null;
+      while (remaining > 0) {
+        if (room() <= 0) nextBar();
+        const fits = remaining <= room();
+        const pieces = fits && first ? [{ type: e.type, dots: e.dots, tuplet: e.tuplet }] : fill(Math.min(remaining, room()));
+        for (const piece of pieces) {
+          const len = ticksOf(piece.type, piece.dots, piece.tuplet);
+          const out: NoteEvent = first
+            ? { ...e, type: piece.type, dots: piece.dots, ...(piece.tuplet ? { tuplet: piece.tuplet } : {}) }
+            : { id: uid(), pitches: e.pitches.map((p) => ({ ...p })), type: piece.type, dots: piece.dots, ...(piece.tuplet ? { tuplet: piece.tuplet } : {}) };
+          if (!piece.tuplet) delete out.tuplet;
+          delete out.tie; // the original tie (if any) goes on the last piece, below
+          if (prev && !isRest(e)) prev.tie = true; // pieces of one note are tied together
+          bars[bars.length - 1].push(out);
+          prev = out;
+          first = false;
+          used += len;
+          remaining -= len;
+        }
+      }
+      if (prev && e.tie && !isRest(e)) prev.tie = true;
+    }
+    if (room() > 0) bars[bars.length - 1].push(...restsFor(room()));
+    return { s, v, bars };
+  });
+
+  // make room and put the new bars in place
+  const needed = Math.max(...result.map((r) => r.bars.length), 1);
+  while (score.measures.length < from + needed) insertMeasure(score, score.measures.length);
+  for (let k = from; k < score.measures.length; k++) {
+    for (let s = 0; s < staves; s++) {
+      setLane(score.measures[k], s, 0, restsFor(barTicks(score, k)));
+      if (score.measures[k].voice2?.[s]) score.measures[k].voice2![s] = null;
+    }
+    if (score.measures[k].voice2?.every((l) => !l)) delete score.measures[k].voice2;
+  }
+  for (const { s, v, bars } of result) {
+    bars.forEach((events, k) => {
+      if (v && events.every(isRest)) return; // no second voice needed in this bar
+      setLane(score.measures[from + k], s, v, tidyRests(events));
+    });
+  }
+}
+
+/** A timed item to lay into bars: a chord (or a rest when `pitches` is empty) lasting `ticks`. */
+export interface StreamItem {
+  pitches: Pitch[];
+  ticks: number;
+}
+
+/**
+ * Write a stream of chords/rests into one lane starting at bar `fromBar`, overwriting
+ * what is there: items crossing a bar line are split and tied, odd lengths become
+ * tuplets where needed (via fill), and bars are added at the end when the music runs on.
+ * Returns the bar after the last one written.
+ */
+export function writeStream(score: Score, s: number, items: StreamItem[], fromBar = 0, v = 0): number {
+  let m = fromBar;
+  let bar: NoteEvent[] = [];
+  let used = 0;
+  const room = () => barTicks(score, m) - used;
+  const flush = () => {
+    if (room() > 0) bar.push(...restsFor(room()));
+    if (m >= score.measures.length) insertMeasure(score, score.measures.length);
+    setLane(score.measures[m], s, v, tidyRests(bar));
+    m++;
+    bar = [];
+    used = 0;
+  };
+  for (const item of items) {
+    let remaining = item.ticks;
+    let prev: NoteEvent | null = null;
+    while (remaining > 0) {
+      if (m >= score.measures.length) insertMeasure(score, score.measures.length);
+      if (room() <= 0) flush();
+      const len = Math.min(remaining, room());
+      // a note that is exactly one (possibly dotted) value is written as that value, not tied pieces
+      const single = item.pitches.length ? largestFitting(len) : null;
+      const pieces = single && ticksOf(single.type, single.dots) === len ? [single] : fill(len);
+      for (const piece of pieces as Piece[]) {
+        const ev: NoteEvent = {
+          id: uid(),
+          pitches: item.pitches.map((p) => ({ ...p })),
+          type: piece.type,
+          dots: piece.dots,
+          ...(piece.tuplet ? { tuplet: piece.tuplet } : {}),
+        };
+        if (prev && item.pitches.length) prev.tie = true;
+        bar.push(ev);
+        prev = ev;
+        used += ticksOf(piece.type, piece.dots, piece.tuplet);
+      }
+      remaining -= len;
+    }
+  }
+  if (bar.length || used) flush();
+  return m;
 }

@@ -70,9 +70,9 @@ export function buildPrintPages(score: Score): HTMLElement[] {
     let html = '';
     if (k === 0) {
       html += `<div class="pp-title">${esc(score.title)}</div>`;
-      html += `<div class="pp-composer">${esc(score.composer || ' ')}</div>`;
+      html += `<div class="pp-composer">${score.partName ? `<span class="pp-part">${esc(score.partName)}</span>` : ''}${esc(score.composer || ' ')}</div>`;
     } else {
-      html += `<div class="pp-running">${esc(score.title)}</div>`;
+      html += `<div class="pp-running">${esc(score.title)}${score.partName ? ` · ${esc(score.partName)}` : ''}</div>`;
     }
     page.innerHTML = html;
     for (const sys of systems) {

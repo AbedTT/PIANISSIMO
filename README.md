@@ -47,6 +47,8 @@ The tables are created on the first request.
 
 **HTTPS.** Serve over HTTPS in production. The session cookie is marked `Secure` automatically, and is always `HttpOnly` and `SameSite=Lax`. Every write needs the CSRF token.
 
+**Full guide.** See [docs/DEPLOY.md](docs/DEPLOY.md) for Nginx, the production checklist and CI.
+
 **Other layouts.** If the API lives elsewhere, set `window.PIANISSIMO_API = 'https://…/server/api/index.php'` before the page scripts.
 
 ## Writing music
@@ -79,6 +81,17 @@ The tables are created on the first request.
 | Move around | `←` `→`, `Ctrl`+`←` `→` by bar, `Alt`+`↑` `↓` between staves |
 | Play | `Space` (from the cursor's bar), `Ctrl`+`Space` from the start |
 | Layout | `Ctrl`+`Enter` line break after the bar, `Ctrl`+`Alt`+`Enter` page break (shown as ↵ / ⤓ markers on screen) |
+| Bar settings | `Alt`+`B` (or **Bar** in the toolbar): key, time, tempo, clef and rehearsal mark from this bar on |
+| Hairpins / pedal / 8va | `<` `>` `Ped` `8va` in the toolbar, over a selection |
+| Grace notes, tuplets | Grace note before the cursor note; triplets plus duplets, quintuplets and sextuplets from the command search |
+| Staff text | `Ctrl`+`E` (*dolce*, *rit.*, *swing*…) |
+| Instruments | **🎻 Instruments…** in the side panel: named parts, order, transposition; *Transposed score* shows what players read |
+| On-screen keyboard | `Shift`+`K` (or 🎹 in the toolbar): tap keys to write notes, with lengths, rest, dot and chord mode. Opens automatically on touch screens |
+| Record from a MIDI keyboard | `Shift`+`R`: count-in, then play with the metronome; `Shift`+`R` or `Space` stops and the take is quantised into the score |
+| Comment on a bar | `Ctrl`+`Alt`+`M` (or 💬): add, resolve or delete review comments |
+| Dark mode | `Ctrl`+`Alt`+`D`, or *Theme* in the side panel (follows the system by default) |
+| Language | *Language* in the side panel: English, Français, Español, Deutsch |
+| Learn the basics | *Start the tutorial* in the side panel, or open `app.html?tutorial` |
 | Everything else | `?` lists every shortcut; `Ctrl`+`Shift`+`P` or `F1` searches commands |
 
 Entry overwrites, like Flat and MuseScore. Every bar (and every voice) always adds up to the time signature:
@@ -95,6 +108,11 @@ Entry overwrites, like Flat and MuseScore. Every bar (and every voice) always ad
 - **MusicXML**: export, and import of `.musicxml`, `.xml` and compressed `.mxl` files, including triplets, slurs and repeats (opens in MuseScore, Flat, Finale, Sibelius, Dorico).
 - **MIDI**: export, with one channel and General MIDI program per staff (plus the chord accompaniment on its own channel when it is on).
 - **MusicXML** also carries lyrics (syllabic), chord symbols (`<harmony>`) and each staff's instrument.
+- **New from a template**: **New** (`Alt`+`N`) offers a gallery: blank piano, lead sheet, waltz, 12-bar blues, scale exercise, SATB chorale and string quartet.
+- **MIDI import**: open a `.mid` file. It is quantised to 16ths or triplets per beat, with one part per track and wide piano tracks on a grand staff.
+- **Audio / image export**: *Export → Audio (.wav)* renders offline (built-in synths are used if the samples cannot be downloaded). *Image (.png / .svg)* saves the whole score as one picture.
+- **Version history**: *Export → Version history…* (`Ctrl`+`Alt`+`H`) lists earlier saves of a library score and restores one (`Ctrl`+`Z` undoes it).
+- **Editing in two places**: if the score was saved from another tab or device, a clean editor updates itself. With unsaved changes you are asked which version to keep; the other one stays in the history.
 - **PDF / print**: `Ctrl`+`P` opens a page-layout preview (A4 or US Letter, four staff sizes). Systems are never split across pages; page 1 carries the title and composer, later pages a running title and page numbers. Choose *Save as PDF* in the print dialog for a PDF file.
 
 ## Code map
@@ -117,8 +135,20 @@ Entry overwrites, like Flat and MuseScore. Every bar (and every voice) always ad
 | `src/site/`, `*.html` | Website pages; the guide's shortcut tables are generated from the command registry |
 | `src/viewer.ts` | Public score viewer |
 | `server/` | PHP API: `api/index.php` (routes), `lib/Auth.php` (sessions, CSRF, throttling), `lib/Scores.php` (library, sharing), `lib/Db.php` (schema) |
-| `src/io/` | MusicXML import/export, `.mxl` unzip (native `DecompressionStream`), MIDI export |
+| `src/io/` | MusicXML import/export, `.mxl` unzip (native `DecompressionStream`), MIDI export and import (`midiImport.ts`), PNG/SVG export (`image.ts`) |
+| `src/audio/render.ts` | Offline WAV rendering and encoding |
+| `src/model/parts.ts`, `context.ts` | Instruments/parts; per-bar key, time, clef and tempo context |
+| `src/model/templates.ts`, `comments.ts` | New-score templates (with a compact melody notation) and bar comments |
+| `src/ui/` | On-screen keyboard, tutorial, accessibility helpers, theme and translations |
+| `.github/workflows/ci.yml` | CI: PHP lint, type-check, tests, build |
 
 ## Not yet supported
 
-See [docs/ROADMAP.md](docs/ROADMAP.md), phases 10–14. In short: tuplets other than triplets, more than two voices per staff, key or time changes mid-score, chromatic (key) transposition, MIDI file import.
+See [docs/ROADMAP.md](docs/ROADMAP.md), *Still open after Phase 14*. In short:
+- live co-editing with shared cursors (saves are conflict-safe, but not merged live);
+- more than two voices per staff;
+- tablature and percussion staves;
+- translated command names;
+- end-to-end browser tests in CI.
+
+Deployment details: [docs/DEPLOY.md](docs/DEPLOY.md).

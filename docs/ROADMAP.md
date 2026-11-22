@@ -6,7 +6,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 
 ---
 
-## 1. Where we are (phases 1–6, shipped)
+## 1. Where we are (phases 1–14, shipped)
 
 | Area | Shipped |
 |---|---|
@@ -16,7 +16,11 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 | **Text** | Chord symbols; lyrics with up to 8 verses and hyphenation |
 | **Sound** | About 30 sampled instruments plus offline synths, chosen per staff; chord-symbol accompaniment in 5 styles; metronome; count-in; loop |
 | **Files** | Pianissimo JSON; MusicXML import/export (`.musicxml`, `.xml`, `.mxl`); MIDI export; print/PDF with pagination |
-| **Quality** | Command registry for shortcuts, toolbar, help and search; 63 unit tests; browser-verified rendering |
+| **Notation (10–11)** | Key/time/clef/tempo changes on any bar; hairpins, pedal, 8va; grace notes; duplets, quintuplets, sextuplets; rehearsal marks and staff text; multiple named parts with brackets, part extraction and transposing instruments |
+| **Input/output (12)** | MIDI file import; WAV, PNG and SVG export; recording from a MIDI keyboard |
+| **Experience (13)** | On-screen piano and touch layout; templates; interactive tutorial; screen-reader announcements and accessible dialogs; dark mode; FR/ES/DE interface |
+| **Collaboration (14)** | Version history; comments on bars; conflict-safe saving across tabs and devices; CI and a deploy guide |
+| **Quality** | Command registry for shortcuts, toolbar, help and search; 113 unit and API tests; browser-verified rendering |
 
 ---
 
@@ -124,37 +128,53 @@ Grouped by area. **Priority**: P1 = core and expected by every user, P2 = import
 - [x] Rendering above the staff, with playback following the jumps (repeats are taken once and not repeated after a D.C., as is standard)
 - [x] MusicXML import/export of `<segno>`, `<coda>`, `<words>` and `<sound dacapo/dalsegno/fine/tocoda>`
 
-### Phase 10: Notation depth (next)
-- [ ] Key, time and clef changes on any bar (model: per-bar overrides; renderer: courtesy signatures)
-- [ ] Hairpins, pedal, 8va
-- [ ] Tempo marks and tempo changes (playback follows them)
-- [ ] Grace notes; tuplets 2:3, 5:4, 6:4
-- [ ] Rehearsal marks and text annotations
+### Phase 10: Notation depth ✅
+- [x] Key, time and clef changes on any bar (model: per-bar overrides; renderer: courtesy signatures). Changing the time signature re-bars the music that follows
+- [x] Hairpins, pedal, 8va / 8vb (drawn across systems, played back: hairpins shape velocity, pedal sustains)
+- [x] Tempo marks and tempo changes (playback, metronome and MIDI export follow them)
+- [x] Grace notes; tuplets 2:3, 5:4, 6:4
+- [x] Rehearsal marks and staff text annotations
 
-### Phase 11: Parts and ensembles
-- [ ] Multiple named parts (instrument list dialog: add, remove, reorder)
-- [ ] Brackets and braces per instrument group
-- [ ] Part extraction view and print each part
-- [ ] Transposing instruments (B♭ clarinet, F horn): concert-pitch toggle
+### Phase 11: Parts and ensembles ✅
+- [x] Multiple named parts (Instruments dialog: add, remove, reorder, rename, transposition)
+- [x] Brackets and braces per instrument group, part names at the start of each system
+- [x] Part extraction and printing each part on its own
+- [x] Transposing instruments (B♭ clarinet, F horn, alto sax…): stored at concert pitch, with a "Transposed score" toggle; MusicXML `<transpose>` both ways
 
-### Phase 12: Input/output
-- [ ] MIDI file import (quantised to the nearest 16th, with triplet detection)
-- [ ] Audio export (WAV) via offline rendering
-- [ ] PNG/SVG page export
-- [ ] Real-time MIDI recording
+### Phase 12: Input/output ✅
+- [x] MIDI file import (quantised per beat to the 16th or triplet-8th grid; wide piano tracks split onto a grand staff; one part per track/channel)
+- [x] Audio export (WAV) via offline rendering. If the sampled instruments cannot be downloaded within 20 s, built-in synths are used so the export always finishes
+- [x] PNG/SVG export (the whole score as one image, fonts embedded)
+- [x] Real-time MIDI recording (`Shift`+`R`: count-in, play along with the metronome, quantised on stop). *Logic is unit-tested; not yet tried with a physical keyboard in our browser checks*
 
-### Phase 13: Experience
-- [ ] Incremental rendering (re-render only changed systems)
-- [ ] Touch editing and on-screen keyboard
-- [ ] Templates gallery and interactive tutorial
-- [ ] Accessibility pass (ARIA live region announcing cursor note and beat; keyboard-only dialogs)
-- [ ] Dark mode, i18n
+### Phase 13: Experience ✅ (two items partial)
+- [~] **Faster rendering (partial):** edits are batched into a single layout pass per animation frame, and cursor moves never re-render. A true per-system re-render is still open; VexFlow lays out whole systems, so it needs a layout cache first
+- [x] Touch editing and an on-screen piano keyboard (`Shift`+`K`): two octaves with octave shift, note lengths, rest, dot, chord mode, undo/delete. Responsive layout for phones and tablets, larger touch targets, and the keyboard opens by default on touch devices
+- [x] Templates gallery in **New score** (blank piano, lead sheet with chords, piano waltz, 12-bar blues, scale exercise, SATB chorale, string quartet) and an interactive tutorial. The tutorial is a coach card that moves on when each step is done (`app.html?tutorial`, or *Start the tutorial*)
+- [x] Accessibility:
+  - A screen-reader live region announces bar, beat, staff and the note under the cursor.
+  - Every dialog is labelled, moves focus in, keeps `Tab` inside, closes with `Esc` and returns focus.
+  - Icon-only buttons have accessible names.
+  - Focus rings are visible.
+- [~] Dark mode (`Ctrl`+`Alt`+`D`, or *Theme* in the side panel; follows the system by default) ✅. **i18n (partial):** English, French, Spanish and German for the fixed interface (menus, side panel, dialogs). Command names in the shortcut sheet, the command search and the status bar are still English
 
-### Phase 14: Collaboration and production hardening
-- [ ] Version history
-- [ ] Comments on bars
-- [ ] Real-time co-editing (WebSocket server, operation transforms on the command level)
-- [ ] CI: type-check, unit tests, Playwright e2e and build on every push; deploy guide
+### Phase 14: Collaboration and production hardening ✅ (co-editing scoped down)
+- [x] Version history: the state before a save is kept, at most one per 5 minutes and the last 50 per score. *File → Version history* (`Ctrl`+`Alt`+`H`) restores one, and `Ctrl`+`Z` undoes the restore
+- [x] Comments on bars (`Ctrl`+`Alt`+`M` or 💬): add, resolve/reopen, delete, jump to bar. Bars with comments show a marker. Comments are saved and shared with the score and are not printed or exported
+- [~] **Real-time co-editing: scoped down to safe concurrent editing.**
+  - Every save carries the revision it was based on, and the server refuses to overwrite a newer save (HTTP 409).
+  - The editor checks for saves made elsewhere every 20 s and whenever the tab becomes visible. If there are no local changes it updates itself; otherwise it asks *Keep mine / Load the other version*. Neither version is lost, because the other one stays in the history.
+  - Live cursors and character-by-character merging (WebSockets plus operation transforms) are **not built**. Shared hosting (XAMPP/PHP) cannot hold WebSocket connections, so this needs a separate realtime service.
+- [x] CI: GitHub Actions runs PHP lint, type-check, unit and API tests, and the build on every push and pull request, and keeps the build as an artifact. A deploy guide is in [DEPLOY.md](DEPLOY.md). *Playwright end-to-end tests are not in CI yet*
+
+### Still open after Phase 14
+| Item | Notes |
+|---|---|
+| Live co-editing (WebSockets, presence, operation transforms) | Needs a realtime service next to PHP |
+| Per-system incremental rendering | Needs a layout cache in `renderer.ts` |
+| Full i18n (command names, status bar, website pages) | Strings are looked up by English text; add rows to `src/ui/i18n.ts` |
+| Playwright end-to-end tests in CI | Browser checks are done by hand today |
+| Embeddable player, PWA/offline install, tablature, percussion, OMR | From section 2 (P3) |
 
 ---
 

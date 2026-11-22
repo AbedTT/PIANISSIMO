@@ -10,8 +10,10 @@ import {
   spellMidi,
 } from '../model/pitch';
 import { decompose, ticksOf } from '../model/duration';
+import { contextAt, measureAtTick } from '../model/context';
 import {
   allEvents,
+  barStart,
   barTicks,
   clearEvent,
   ensureLane,
@@ -22,12 +24,17 @@ import {
   eventTicks,
   insertMeasure,
   newScore,
+  reflow,
+  refitMeasures,
   removeMeasure,
+  writeStream,
+  type StreamItem,
   startTick,
   writeAt,
 } from '../model/score';
 import { MAX_VERSES, setLyricOn } from '../model/lyrics';
-import { transposeEvents, transposeScore } from '../model/transpose';
+import { addPart, ensureParts, movePart, removePart, writtenShift } from '../model/parts';
+import { transposeEvents, transposeKey, transposeScore } from '../model/transpose';
 import {
   isRest,
   TRIPLET,
@@ -40,8 +47,11 @@ import {
   type NoteEvent,
   type Pitch,
   type PrintSettings,
+  type Clef,
   type Score,
+  type SpanKind,
   type Step,
+  type Tuplet,
 } from '../model/types';
 
 export interface Cursor {
@@ -87,7 +97,11 @@ export class Editor {
   anchor: Cursor | null = null;
   inputType: DurationType = 'q';
   inputDots = 0;
-  inputTriplet = false;
+  /** Tuplet ratio for new notes (null = normal notes). */
+  inputTuplet: Tuplet | null = null;
+  get inputTriplet(): boolean {
+    return !!this.inputTuplet;
+  }
   palette: Palette = 'notes';
   tool: Tool = 'keyboard';
   /** Last note written by the user, the target for chord/accidental/tie commands. */
@@ -276,7 +290,7 @@ export class Editor {
 
   // ---------- selection ----------
   private absStart(c: Cursor) {
-    return c.m * barTicks(this.score) + startTick(lane(this.score, c.m, c.s, c.v), c.i);
+    return barStart(this.score, c.m) + startTick(lane(this.score, c.m, c.s, c.v), c.i);
   }
 
   selectAll() {
@@ -304,12 +318,12 @@ export class Editor {
   selected(): Located[] {
     const r = this.selectionRange();
     if (!r) return [];
-    const bar = barTicks(this.score);
     const out: Located[] = [];
+    const first = measureAtTick(this.score, r.start);
     for (let s = r.s0; s <= r.s1; s++) {
       for (const v of [0, 1]) {
-        for (let m = Math.floor(r.start / bar); m < this.score.measures.length && m * bar < r.end; m++) {
-          let t = m * bar;
+        for (let m = first; m < this.score.measures.length && barStart(this.score, m) < r.end; m++) {
+          let t = barStart(this.score, m);
           laneOf(this.score.measures[m], s, v)?.forEach((e, i) => {
             if (t >= r.start && t < r.end) out.push({ m, s, i, v, e });
             t += eventTicks(e);
@@ -377,7 +391,7 @@ export class Editor {
         }
       }
     }
-    return clefMiddle(this.score.staves[s].clef);
+    return clefMiddle(this.clefAt(m, s));
   }
 
   // ---------- entry ----------
@@ -394,7 +408,6 @@ export class Editor {
     ev: EventData,
     v = 0,
   ): { m: number; i: number; id: string } {
-    const bar = barTicks(score);
     let remaining = eventTicks(ev);
     let first = true;
     let id = '';
@@ -411,7 +424,8 @@ export class Editor {
     };
 
     while (remaining > 0) {
-      const room = bar - startTick(ensureLane(score, m, s, v), i); // voice 2 continues into the next bar
+      // bars can differ in length (time changes); voice 2 continues into the next bar
+      const room = barTicks(score, m) - startTick(ensureLane(score, m, s, v), i);
       let pieces: { type: DurationType; dots: number; tuplet?: typeof tuplet }[];
       if (tuplet) {
         if (remaining > room) {
@@ -456,7 +470,7 @@ export class Editor {
           pitches,
           type: this.inputType,
           dots: this.inputDots,
-          ...(this.inputTriplet ? { tuplet: TRIPLET } : {}),
+          ...(this.inputTuplet ? { tuplet: this.inputTuplet } : {}),
         },
         v,
       );
@@ -469,13 +483,89 @@ export class Editor {
   }
 
   typeLetter(step: Step) {
-    this.write([nearestPitch(step, this.referencePitch(), this.score.keyFifths)]);
+    const { m, s } = this.cursor;
+    // in the transposed view the letter names the written note of a transposing instrument
+    const written = nearestPitch(step, this.toWritten(this.referencePitch(), s, m), this.writtenKey(s, m));
+    this.write([this.toConcert(written, s, m)]);
+  }
+
+  /** Write a recorded (or imported) chord stream into the cursor's staff from bar `fromBar`. */
+  writeRecorded(s: number, fromBar: number, items: StreamItem[], v = 0) {
+    this.anchor = null;
+    this.mutate((score) => writeStream(score, s, items, fromBar, v));
+    this.setCursor({ m: fromBar, s, i: 0, v });
+  }
+
+  // ---------- transposing instruments ----------
+  /** Semitones from concert to written pitch for staff `s` in the current view (0 at concert pitch). */
+  shownShift(s: number): number {
+    return this.score.transposedView ? writtenShift(this.score, s) : 0;
+  }
+
+  writtenKey(s: number, m: number): number {
+    const sh = this.shownShift(s);
+    return sh ? transposeKey(this.keyAt(m), sh) : this.keyAt(m);
+  }
+
+  toWritten(p: Pitch, s: number, m: number): Pitch {
+    const sh = this.shownShift(s);
+    return sh ? spellMidi(midiOf(p) + sh, this.writtenKey(s, m)) : p;
+  }
+
+  toConcert(p: Pitch, s: number, m: number): Pitch {
+    const sh = this.shownShift(s);
+    return sh ? spellMidi(midiOf(p) - sh, this.keyAt(m)) : p;
+  }
+
+  toggleTransposedView() {
+    this.mutate((score) => {
+      if (score.transposedView) delete score.transposedView;
+      else score.transposedView = true;
+    });
+    return !!this.score.transposedView;
+  }
+
+  // ---------- instruments (parts) ----------
+  addPart(instrumentId: string) {
+    this.mutate((score) => addPart(score, instrumentId));
+  }
+
+  removePart(index: number) {
+    let ok = false;
+    this.mutate((score) => (ok = removePart(score, index)));
+    this.anchor = null;
+    this.clampCursor();
+    return ok;
+  }
+
+  movePart(index: number, dir: -1 | 1) {
+    this.mutate((score) => movePart(score, index, dir));
+    this.anchor = null;
+  }
+
+  renamePart(index: number, name: string, short: string) {
+    this.mutate((score) => {
+      const parts = ensureParts(score);
+      if (!parts[index]) return;
+      parts[index].name = name.trim().slice(0, 40) || parts[index].name;
+      parts[index].short = short.trim().slice(0, 12);
+    });
+  }
+
+  setPartTranspose(index: number, semitones: number) {
+    this.mutate((score) => {
+      const parts = ensureParts(score);
+      if (!parts[index]) return;
+      if (semitones) parts[index].transpose = semitones;
+      else delete parts[index].transpose;
+    });
   }
 
   /** Notes from a MIDI keyboard (one or several keys pressed together). */
   writeMidi(notes: number[]) {
     if (!notes.length) return;
-    this.write([...notes].sort((a, b) => a - b).map((n) => spellMidi(n, this.score.keyFifths)));
+    const key = this.keyAt(this.cursor.m);
+    this.write([...notes].sort((a, b) => a - b).map((n) => spellMidi(n, key)));
   }
 
   writePitchAt(c: Cursor, pitch: Pitch) {
@@ -491,10 +581,10 @@ export class Editor {
   addToChord(step: Step) {
     const t = this.target();
     if (!t) return this.typeLetter(step);
-    const top = t.e.pitches.reduce((a, b) => (diatonic(a) >= diatonic(b) ? a : b));
-    let p = nearestPitch(step, top, this.score.keyFifths);
+    const top = this.toWritten(t.e.pitches.reduce((a, b) => (diatonic(a) >= diatonic(b) ? a : b)), t.s, t.m);
+    let p = nearestPitch(step, top, this.writtenKey(t.s, t.m));
     if (diatonic(p) <= diatonic(top)) p = { ...p, octave: p.octave + 1 };
-    this.addPitch(t, p);
+    this.addPitch(t, this.toConcert(p, t.s, t.m));
   }
 
   /** Add an interval (2 = second … 8 = octave) above the target's top note. */
@@ -502,7 +592,7 @@ export class Editor {
     const t = this.target();
     if (!t) return;
     const top = t.e.pitches.reduce((a, b) => (diatonic(a) >= diatonic(b) ? a : b));
-    this.addPitch(t, shiftDiatonic(top, n - 1, this.score.keyFifths));
+    this.addPitch(t, shiftDiatonic(top, n - 1, this.keyAt(t.m)));
   }
 
   private addPitch(t: Located, p: Pitch) {
@@ -515,11 +605,11 @@ export class Editor {
   }
 
   // ---------- editing the target(s) ----------
-  private updateTargets(fn: (e: NoteEvent) => void, preview = true) {
+  private updateTargets(fn: (e: NoteEvent, at: Located) => void, preview = true) {
     const ts = this.targets();
     if (!ts.length) return;
     this.mutate((score) => {
-      for (const t of ts) fn(eventAt(score, t)!);
+      for (const t of ts) fn(eventAt(score, t)!, t);
     });
     if (preview && ts.length === 1) {
       const e = eventAt(this.score, ts[0])!;
@@ -529,8 +619,8 @@ export class Editor {
 
   /** Raise/lower by diatonic step (all chord notes; whole selection when there is one). */
   shift(steps: number) {
-    this.updateTargets((e) => {
-      e.pitches = e.pitches.map((p) => shiftDiatonic(p, steps, this.score.keyFifths));
+    this.updateTargets((e, at) => {
+      e.pitches = e.pitches.map((p) => shiftDiatonic(p, steps, this.keyAt(at.m)));
     });
   }
 
@@ -542,8 +632,8 @@ export class Editor {
 
   /** Toggle sharp/flat/natural. Pressing again returns to the key-signature default. */
   accidental(alter: number) {
-    const fifths = this.score.keyFifths;
-    this.updateTargets((e) => {
+    this.updateTargets((e, at) => {
+      const fifths = this.keyAt(at.m);
       e.pitches = e.pitches.map((p) => ({ ...p, alter: p.alter === alter ? keyAlter(p.step, fifths) : alter }));
     });
   }
@@ -630,7 +720,13 @@ export class Editor {
   }
 
   toggleTriplet() {
-    this.inputTriplet = !this.inputTriplet;
+    this.toggleTuplet(TRIPLET);
+  }
+
+  /** Switch tuplet input on with a ratio (3:2 triplet, 2:3 duplet, 5:4, 6:4), or off if it is already on. */
+  toggleTuplet(ratio: Tuplet) {
+    const same = this.inputTuplet && this.inputTuplet.actual === ratio.actual && this.inputTuplet.normal === ratio.normal;
+    this.inputTuplet = same ? null : { ...ratio };
     this.retimeCurrent();
     this.emit('ui');
   }
@@ -646,7 +742,7 @@ export class Editor {
         m,
         s,
         i,
-        { pitches: cur.pitches, type: this.inputType, dots: this.inputDots, tuplet: this.inputTriplet ? TRIPLET : undefined },
+        { pitches: cur.pitches, type: this.inputType, dots: this.inputDots, tuplet: this.inputTuplet ?? undefined },
         cur,
         v,
       );
@@ -659,7 +755,7 @@ export class Editor {
     if (!t) return;
     this.inputType = t.e.type;
     this.inputDots = t.e.dots;
-    this.inputTriplet = !!t.e.tuplet;
+    this.inputTuplet = t.e.tuplet ? { ...t.e.tuplet } : null;
     this.write(clone(t.e.pitches));
   }
 
@@ -781,6 +877,157 @@ export class Editor {
       const measure = score.measures[m];
       if (measure[which]) delete measure[which];
       else measure[which] = true;
+    });
+  }
+
+  // ---------- changes at a bar (key, time, clef, tempo, rehearsal) ----------
+  /**
+   * Set or clear (null) changes that start at bar `m`. A time change re-fits the bars it
+   * governs; setting a value equal to what is already in effect simply removes the change.
+   */
+  setBarChanges(
+    m: number,
+    patch: {
+      key?: number | null;
+      time?: { beats: number; beatType: number } | null;
+      clef?: { s: number; clef: Clef | null };
+      tempo?: { bpm: number; text?: string } | null;
+      rehearsal?: string | null;
+    },
+  ) {
+    this.mutate((score) => {
+      const bar = score.measures[m];
+      const before = m > 0 ? contextAt(score, m - 1) : null;
+      if (patch.key !== undefined) {
+        const startKey = before ? before.key : score.keyFifths;
+        if (patch.key === null || (m > 0 && patch.key === startKey)) delete bar.key;
+        else if (m === 0) score.keyFifths = patch.key; // the first bar's key is the score key
+        else bar.key = patch.key;
+      }
+      if (patch.time !== undefined) {
+        const same = before && patch.time && before.beats === patch.time.beats && before.beatType === patch.time.beatType;
+        if (patch.time === null || same) delete bar.time;
+        else if (m === 0) {
+          score.timeBeats = patch.time.beats;
+          score.timeBeatType = patch.time.beatType;
+        } else bar.time = { ...patch.time };
+        // flow the music into the new bar lengths (splitting and tying), so no note is lost
+        reflow(score, m);
+        refitMeasures(score);
+      }
+      if (patch.clef) {
+        const { s, clef } = patch.clef;
+        const prev = before ? before.clefs[s] : null;
+        if (m === 0 && clef) score.staves[s].clef = clef;
+        else {
+          const clefs = bar.clefs ?? score.staves.map(() => null);
+          clefs[s] = clef === null || clef === prev ? null : clef;
+          if (clefs.some((c) => c)) bar.clefs = clefs;
+          else delete bar.clefs;
+        }
+      }
+      if (patch.tempo !== undefined) {
+        if (patch.tempo === null) delete bar.tempo;
+        else if (m === 0 && !patch.tempo.text) {
+          score.tempo = patch.tempo.bpm;
+          delete bar.tempo;
+        } else bar.tempo = { bpm: Math.max(20, Math.min(300, Math.round(patch.tempo.bpm))), ...(patch.tempo.text ? { text: patch.tempo.text } : {}) };
+      }
+      if (patch.rehearsal !== undefined) {
+        if (patch.rehearsal === null || !patch.rehearsal.trim()) delete bar.rehearsal;
+        else bar.rehearsal = patch.rehearsal.trim().slice(0, 20);
+      }
+    });
+  }
+
+  /** Next rehearsal letter after the ones already used before bar `m` (A, B, … Z, AA…). */
+  nextRehearsalLetter(m: number): string {
+    let count = 0;
+    for (let k = 0; k < m; k++) if (this.score.measures[k].rehearsal) count++;
+    let n = count;
+    let out = '';
+    do {
+      out = String.fromCharCode(65 + (n % 26)) + out;
+      n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return out;
+  }
+
+  // ---------- lines over notes: hairpins, pedal, 8va ----------
+  /**
+   * Add a line from the first to the last selected note of one lane, or from the target
+   * note to the next note. Pressing again on a note that already starts one removes it.
+   */
+  toggleSpan(kind: SpanKind): boolean {
+    const ts = this.targets();
+    if (!ts.length) return false;
+    const from = ts[0];
+    let to: Located | null = null;
+    if (this.anchor) {
+      const lane = ts.filter((t) => t.s === from.s && (t.v ?? 0) === (from.v ?? 0));
+      to = lane[lane.length - 1];
+    } else {
+      for (let n = this.nextOnStaff(from); n; n = this.nextOnStaff(n)) {
+        if (!isRest(n.e)) {
+          to = n;
+          break;
+        }
+      }
+      to ??= from; // last note of the piece: the line covers just this note
+    }
+    // a crescendo replaces a diminuendo (and 8va replaces 8vb) on the same note
+    const sameFamily = (k: SpanKind) => k === kind || (isHairpin(kind) && isHairpin(k)) || (isOttava(kind) && isOttava(k));
+    const had = !!from.e.spans?.some((sp) => sp.kind === kind);
+    this.mutate((score) => {
+      const e = eventAt(score, from)!;
+      const spans = (e.spans ?? []).filter((sp) => !sameFamily(sp.kind));
+      if (!had) spans.push({ kind, end: to!.e.id });
+      if (spans.length) e.spans = spans;
+      else delete e.spans;
+    });
+    return !had;
+  }
+
+  // ---------- grace notes ----------
+  /** Add a grace note (one step above the target note) before the target; up to 4. */
+  addGrace() {
+    const t = this.target();
+    if (!t) return;
+    const key = this.keyAt(t.m);
+    const top = t.e.pitches.reduce((a, b) => (diatonic(a) >= diatonic(b) ? a : b));
+    this.mutate((score) => {
+      const e = eventAt(score, t)!;
+      const graces = e.graces ?? [];
+      if (graces.length >= 4) return;
+      // each new grace leads into the previous one, stepping down toward the main note
+      const ref = graces.length ? graces[0].pitches[0] : top;
+      graces.unshift({ pitches: [shiftDiatonic(ref, 1, key)] });
+      e.graces = graces;
+    });
+    const g = eventAt(this.score, t)?.graces?.[0];
+    if (g) this.onPreview(g.pitches, t.s);
+  }
+
+  clearGraces() {
+    this.updateTargets((e) => {
+      delete e.graces;
+    }, false);
+  }
+
+  /** Move the grace notes of the target by diatonic steps. */
+  shiftGraces(steps: number) {
+    this.updateTargets((e, at) => {
+      e.graces = e.graces?.map((g) => ({ pitches: g.pitches.map((p) => shiftDiatonic(p, steps, this.keyAt(at.m))) }));
+    }, false);
+  }
+
+  // ---------- staff text ----------
+  setText(c: Cursor, text: string | null) {
+    this.mutate((score) => {
+      const e = eventAt(score, c);
+      if (!e) return;
+      if (text && text.trim()) e.text = text.trim().slice(0, 80);
+      else delete e.text;
     });
   }
 
@@ -930,9 +1177,10 @@ export class Editor {
   selectedMeasures(): number[] {
     const r = this.selectionRange();
     if (!r) return [this.cursor.m];
-    const bar = barTicks(this.score);
     const out: number[] = [];
-    for (let m = Math.floor(r.start / bar); m * bar < r.end && m < this.score.measures.length; m++) out.push(m);
+    for (let m = measureAtTick(this.score, r.start); m < this.score.measures.length && barStart(this.score, m) < r.end; m++) {
+      out.push(m);
+    }
     return out;
   }
 
@@ -962,7 +1210,7 @@ export class Editor {
       transposeEvents(
         sel.map((x) => eventAt(score, x)!),
         semitones,
-        score.keyFifths,
+        this.keyAt(sel[0]?.m ?? 0),
       ),
     );
   }
@@ -975,8 +1223,8 @@ export class Editor {
 
   /** Move notes by a semitone (chromatic), spelled in the current key. */
   chromatic(dir: 1 | -1) {
-    this.updateTargets((e) => {
-      e.pitches = e.pitches.map((p) => spellMidi(midiOf(p) + dir, this.score.keyFifths));
+    this.updateTargets((e, at) => {
+      e.pitches = e.pitches.map((p) => spellMidi(midiOf(p) + dir, this.keyAt(at.m)));
     });
   }
 
@@ -996,8 +1244,21 @@ export class Editor {
     this.emit('ui');
   }
 
-  /** Pitch for a mouse click at a vertical staff position. */
-  pitchAt(s: number, halfSpacesFromTop: number): Pitch {
-    return pitchAtStaffPosition(this.score.staves[s].clef, halfSpacesFromTop, this.score.keyFifths);
+  /** Pitch for a mouse click at a vertical staff position in bar `m`. */
+  pitchAt(s: number, halfSpacesFromTop: number, m = this.cursor.m): Pitch {
+    // the click names a written note; store the concert pitch
+    return this.toConcert(pitchAtStaffPosition(this.clefAt(m, s), halfSpacesFromTop, this.writtenKey(s, m)), s, m);
+  }
+
+  /** Key signature in effect at bar `m` (key changes apply from their bar on). */
+  keyAt(m: number): number {
+    return contextAt(this.score, m).key;
+  }
+
+  clefAt(m: number, s: number) {
+    return contextAt(this.score, m).clefs[s] ?? this.score.staves[s].clef;
   }
 }
+
+const isHairpin = (k: SpanKind) => k === 'cresc' || k === 'dim';
+const isOttava = (k: SpanKind) => k === '8va' || k === '8vb';

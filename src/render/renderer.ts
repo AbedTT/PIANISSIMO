@@ -7,17 +7,27 @@ import {
   Curve,
   Dot,
   Formatter,
+  Modifier,
   Renderer,
   Stave,
   StaveConnector,
   StaveNote,
   StaveTie,
   Tuplet,
+  GraceNote,
+  GraceNoteGroup,
+  PedalMarking,
   Repetition,
+  StaveHairpin,
+  TextBracket,
+  TextBracketPosition,
   Voice,
   VoiceMode,
   VoltaType,
 } from 'vexflow';
+import { contexts, type BarContext } from '../model/context';
+import { partsOf, writtenShift } from '../model/parts';
+import { transposeEvents, transposeKey } from '../model/transpose';
 import { prettyChord } from '../model/harmony';
 import { lyricsOf } from '../model/lyrics';
 import { diatonic, keyAlter, KEY_NAMES, midiOf } from '../model/pitch';
@@ -105,14 +115,14 @@ interface BuiltMeasure {
 
 const laneVoices = (b: BuiltMeasure) => b.lanes.flat().flatMap((l) => (l.voice ? [l.voice] : []));
 
-function buildMeasure(score: Score, m: number): BuiltMeasure {
+function buildMeasure(score: Score, m: number, ctx: BarContext, keyOf: (s: number) => number = () => ctx.key): BuiltMeasure {
   const measure = score.measures[m];
   const lanes: LaneBuild[][] = [];
   const eventNote: Map<string, StaveNote>[] = [];
   const tuplets: Tuplet[] = [];
 
   measure.staves.forEach((_, s) => {
-    const clef = score.staves[s].clef;
+    const clef = ctx.clefs[s] ?? score.staves[s].clef;
     const map = new Map<string, StaveNote>();
     const v2 = laneOf(measure, s, 1);
     const twoVoices = !!v2 && v2.some((e) => !isRest(e));
@@ -131,13 +141,13 @@ function buildMeasure(score: Score, m: number): BuiltMeasure {
         events.forEach((e) => map.set(e.id, n));
       } else {
         for (const e of events) {
-          const n = makeNote(e, clef, score.keyFifths, state, stem, restKey);
+          const n = makeNote(e, clef, keyOf(s), state, stem, restKey);
           notes.push(n);
           map.set(e.id, n);
         }
         tuplets.push(...groupTuplets(events, notes));
       }
-      const voice = new Voice({ numBeats: score.timeBeats, beatValue: score.timeBeatType });
+      const voice = new Voice({ numBeats: ctx.beats, beatValue: ctx.beatType });
       voice.setMode(VoiceMode.SOFT);
       voice.addTickables(notes);
       return { v, events, notes, voice, collapsed, stem };
@@ -204,6 +214,30 @@ function makeNote(
     }
   });
   if (e.dots) Dot.buildAndAttach([n], { all: true });
+  if (e.graces?.length) {
+    // slashed grace notes (acciaccature) before the main note, beamed when there are several
+    const graces = e.graces.map((g) => {
+      const ps = [...g.pitches].sort((a, b) => diatonic(a) - diatonic(b));
+      const gn = new GraceNote({
+        keys: ps.map((p) => `${p.step.toLowerCase()}/${p.octave}`),
+        duration: e.graces!.length > 1 ? '16' : '8',
+        slash: e.graces!.length === 1,
+        clef,
+      });
+      ps.forEach((p, idx) => {
+        const key = `${p.step}${p.octave}`;
+        const current = state.has(key) ? state.get(key)! : keyAlter(p.step, fifths);
+        if (current !== p.alter) {
+          gn.addModifier(new Accidental(ACC_CODE[p.alter] ?? 'n'), idx);
+          state.set(key, p.alter);
+        }
+      });
+      return gn;
+    });
+    const group = new GraceNoteGroup(graces, true);
+    if (graces.length > 1) group.beamNotes();
+    n.addModifier(group, 0);
+  }
   for (const a of e.articulations ?? []) n.addModifier(new Articulation(ART_CODE[a]), 0);
   if (e.dynamic) {
     const ann = new Annotation(e.dynamic);
@@ -222,7 +256,7 @@ function makeNote(
 function addText(_n: StaveNote, _e: NoteEvent) {}
 
 interface TextItem {
-  kind: 'chord' | 'lyric';
+  kind: 'chord' | 'lyric' | 'text';
   group: string; // system:staff:voice:kind+verse (one text line)
   /** lines sharing a baseline origin (all verses of one staff+voice in one system) */
   baseKey: string;
@@ -251,17 +285,27 @@ function drawTextLines(ctx: ReturnType<Renderer['getContext']>, items: TextItem[
   for (const it of items) {
     if (!groups.has(it.group)) groups.set(it.group, []);
     groups.get(it.group)!.push(it);
-    const y = it.kind === 'chord' ? Math.min(it.staveTop - 22, it.noteTop - 10) : Math.max(it.staveBottom + 30, it.noteBottom + 18);
+    const above = it.kind !== 'lyric';
+    const y = above ? Math.min(it.staveTop - 22, it.noteTop - 10) : Math.max(it.staveBottom + 30, it.noteBottom + 18);
     const prev = bases.get(it.baseKey);
-    bases.set(it.baseKey, prev === undefined ? y : it.kind === 'chord' ? Math.min(prev, y) : Math.max(prev, y));
+    bases.set(it.baseKey, prev === undefined ? y : above ? Math.min(prev, y) : Math.max(prev, y));
   }
   for (const list of groups.values()) {
     list.sort((a, b) => a.x - b.x);
-    const chord = list[0].kind === 'chord';
-    const y = bases.get(list[0].baseKey)! + list[0].line * VERSE_LINE;
+    const kind = list[0].kind;
+    const chord = kind !== 'lyric'; // chords and staff text are left-aligned above the staff
+    // staff text sits one line above the chord symbols when both are present
+    const chordBase = bases.get(list[0].baseKey.replace(/:t$/, ':c'));
+    const y =
+      kind === 'text'
+        ? Math.min(bases.get(list[0].baseKey)!, chordBase !== undefined ? chordBase - 20 : Infinity)
+        : bases.get(list[0].baseKey)! + list[0].line * VERSE_LINE;
     ctx.save();
-    const [family, size, weight] = chord ? CHORD_FONT : LYRIC_FONT;
-    ctx.setFont(family, size, weight);
+    if (kind === 'text') ctx.setFont('Georgia, Times New Roman, serif', 14, 'normal', 'italic');
+    else {
+      const [family, size, weight] = chord ? CHORD_FONT : LYRIC_FONT;
+      ctx.setFont(family, size, weight);
+    }
     const widths = list.map((i) => ctx.measureText(i.text).width);
     // nudge right any label that would collide with the previous one
     const gap = chord ? 10 : 6;
@@ -294,14 +338,43 @@ function drawTextLines(ctx: ReturnType<Renderer['getContext']>, items: TextItem[
   }
 }
 
-export function renderScore(host: HTMLElement, score: Score, width: number): Layout {
+/**
+ * The score as it should be shown: in the transposed view every transposing instrument
+ * is written at its own pitch, key signature and chord symbols (ids are kept, so the
+ * cursor and selection still line up). Returns the score and each staff's key shift.
+ */
+function displayScore(score: Score): { shown: Score; shift: number[] } {
+  const shift = score.staves.map((_, s) => (score.transposedView ? writtenShift(score, s) : 0));
+  if (!shift.some((x) => x)) return { shown: score, shift };
+  const shown: Score = JSON.parse(JSON.stringify(score));
+  const ctxs = contexts(score);
+  shown.measures.forEach((bar, m) => {
+    shift.forEach((sh, s) => {
+      if (!sh) return;
+      const key = transposeKey(ctxs[m].key, sh);
+      transposeEvents(bar.staves[s] ?? [], sh, key);
+      if (bar.voice2?.[s]) transposeEvents(bar.voice2[s]!, sh, key);
+    });
+  });
+  return { shown, shift };
+}
+
+export function renderScore(host: HTMLElement, original: Score, width: number): Layout {
   host.innerHTML = '';
+  const { shown: score, shift } = displayScore(original);
+  const parts = partsOf(score);
+  const multiPart = parts.length > 1;
+  // room on the left for instrument names when there are several instruments
+  // (about 7.5px per character of 13px Georgia, plus padding; capped so music keeps most of the line)
+  const nameW = multiPart ? Math.min(170, Math.max(...parts.map((p) => p.part.name.length)) * 7.5 + 26) : 0;
   const layout: Layout = { events: new Map(), staves: [], elements: new Map(), systems: [], height: 0 };
-  const built = score.measures.map((_, m) => buildMeasure(score, m));
+  const ctxs = contexts(score);
+  const keyFor = (m: number) => (s: number) => (shift[s] ? transposeKey(ctxs[m].key, shift[s]) : ctxs[m].key);
+  const built = score.measures.map((_, m) => buildMeasure(score, m, ctxs[m], keyFor(m)));
 
   // ---- line breaking ----
-  const usable = width - MARGIN_X * 2;
-  const keyWidth = 12 * Math.abs(score.keyFifths);
+  const usable = width - MARGIN_X * 2 - nameW;
+  const keyWidth = (m: number) => 12 * Math.abs(ctxs[m]?.key ?? score.keyFifths);
   const systems: number[][] = [];
   let line: number[] = [];
   let lineWidth = 0;
@@ -321,13 +394,17 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
     return Math.max(110, built[m].minWidth * 1.6 + 26 * events + 20, textRoom + 40);
   };
   built.forEach((_, m) => {
-    const header = line.length === 0 ? 50 + keyWidth + (systems.length === 0 ? 30 : 0) : 0;
+    // a key, time or clef change inside a line needs room too
+    const here = score.measures[m];
+    const change =
+      (here.key !== undefined ? 12 * Math.abs(ctxs[m].key) + 14 : 0) + (here.time ? 30 : 0) + (here.clefs?.some((c) => c) ? 28 : 0);
+    const header = line.length === 0 ? 50 + keyWidth(m) + (systems.length === 0 || here.time ? 30 : 0) : change;
     const w = desired(m) + header;
     if (line.length > 0 && lineWidth + w > usable) {
       systems.push(line);
       line = [];
       lineWidth = 0;
-      const head = 50 + keyWidth;
+      const head = 50 + keyWidth(m) + (score.measures[m].time ? 30 : 0);
       line.push(m);
       lineWidth = desired(m) + head;
     } else {
@@ -346,7 +423,7 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
 
   const staffCount = score.staves.length;
   // room for chord symbols above / lyrics below each staff
-  const has = (s: number, key: 'harmony' | 'lyric') =>
+  const has = (s: number, key: 'harmony' | 'lyric' | 'text') =>
     score.measures.some((mm) => mm.staves[s]?.some((e) => e[key]));
   const versesOn = (s: number) =>
     Math.max(
@@ -358,7 +435,7 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
   const staffY: number[] = [];
   let yAcc = 0;
   score.staves.forEach((_, s) => {
-    yAcc += has(s, 'harmony') ? 22 : 0;
+    yAcc += (has(s, 'harmony') ? 22 : 0) + (has(s, 'text') ? 20 : 0);
     staffY.push(yAcc);
     const verses = versesOn(s);
     yAcc += STAFF_GAP + (verses ? 26 + (verses - 1) * VERSE_LINE : 0);
@@ -376,6 +453,9 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
   const slurs: { from: NoteEvent; s: number; m: number }[] = [];
   const noteById = new Map<string, { note: StaveNote; m: number; s: number }>();
   const textItems: TextItem[] = [];
+  const sysOfNote = new Map<string, number>();
+  const laneNotes = new Map<string, StaveNote[]>(); // `${system}:${staff}:${voice}` -> notes in order
+  const spans: { from: NoteEvent; s: number; v: number; kind: string; end: string }[] = [];
   const staveOf = new Map<string, Stave>(); // `${m}:${s}`
   const drawn: BuiltMeasure[] = [];
 
@@ -389,28 +469,46 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
     });
     const isLast = sysIdx === systems.length - 1;
     // header widths
-    const headerW = 50 + keyWidth + (sysIdx === 0 ? 30 : 0);
+    const firstBar = score.measures[measures[0]];
+    const headerW = 50 + keyWidth(measures[0]) + (sysIdx === 0 || firstBar.time ? 30 : 0);
     const natural = measures.map((m) => desired(m));
     const sum = natural.reduce((a, b) => a + b, 0) + headerW;
     const stretch = isLast && sum < usable * 0.7 ? 1 : usable / sum;
 
-    let x = MARGIN_X;
+    let x = MARGIN_X + nameW;
     const firstStaves: Stave[] = [];
     const lastStaves: Stave[] = [];
     measures.forEach((m, k) => {
       const w = natural[k] * stretch + (k === 0 ? headerW * stretch : 0);
       // fresh notes for drawing: the width pass already attached formatter state to built[m]
-      const b = buildMeasure(score, m);
+      const b = buildMeasure(score, m, ctxs[m], keyFor(m));
       drawn[m] = b;
       const staves = score.staves.map((def, s) => {
         const st = new Stave(x, y0 + staffY[s], w);
-        if (k === 0) {
-          st.addClef(def.clef);
-          if (score.keyFifths !== 0) st.addKeySignature(KEY_NAMES[score.keyFifths]);
-          if (sysIdx === 0) st.addTimeSignature(`${score.timeBeats}/${score.timeBeatType}`);
-          if (s === 0 && m > 0) st.setMeasure(m + 1);
-        }
         const bar = score.measures[m];
+        const bc = ctxs[m];
+        const prev = m > 0 ? ctxs[m - 1] : null;
+        const clef = bc.clefs[s] ?? def.clef;
+        if (k === 0) {
+          st.addClef(clef);
+          const key = keyFor(m)(s);
+          const prevKey = prev ? keyFor(m - 1)(s) : 0;
+          if (key !== 0 || (prev && prevKey !== 0 && bar.key !== undefined)) {
+            st.addKeySignature(KEY_NAMES[key], bar.key !== undefined && prev ? KEY_NAMES[prevKey] : undefined);
+          }
+          if (sysIdx === 0 || bar.time) st.addTimeSignature(`${bc.beats}/${bc.beatType}`);
+          if (s === 0 && m > 0) st.setMeasure(m + 1);
+        } else {
+          // changes in the middle of a line
+          if (bar.clefs?.[s]) st.addClef(clef, 'small');
+          if (bar.key !== undefined) st.addKeySignature(KEY_NAMES[keyFor(m)(s)], prev ? KEY_NAMES[keyFor(m - 1)(s)] : undefined);
+          if (bar.time) st.addTimeSignature(`${bc.beats}/${bc.beatType}`);
+        }
+        if (s === 0 && bar.tempo) {
+          st.setTempo({ name: bar.tempo.text || undefined, duration: 'q', bpm: bar.tempo.bpm }, 0);
+        }
+        // the rehearsal box sits above the tempo mark when both are present
+        if (s === 0 && bar.rehearsal) st.setSection(bar.rehearsal, bar.tempo ? -24 : 0, 0, 14, true);
         if (bar.repeatStart) st.setBegBarType(Barline.type.REPEAT_BEGIN);
         if (bar.volta && s === 0) {
           // bracket runs over consecutive bars of the same ending within this system
@@ -449,7 +547,11 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
 
       // measure barline across the grand staff
       if (staffCount > 1) {
-        new StaveConnector(staves[0], staves[staffCount - 1]).setType('singleRight').setContext(ctx).draw();
+        for (const { part, start } of parts) {
+          if (part.staves > 1) {
+            new StaveConnector(staves[start], staves[start + part.staves - 1]).setType('singleRight').setContext(ctx).draw();
+          }
+        }
       }
 
       // format all staves of this bar together so beats line up
@@ -495,8 +597,8 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
           // hidden voice 2 (only rests): place its slots proportionally so the cursor can still sit there
           const span = st.getX() + st.getWidth() - st.getNoteStartX() - 12;
           events.forEach((e, i) => {
-            const x0 = st.getNoteStartX() + (startTick(events, i) / barTicks(score)) * span;
-            layout.events.set(e.id, { m, s, i, v, x: x0, width: Math.max(12, (eventTicksOf(e) / barTicks(score)) * span - 4) });
+            const x0 = st.getNoteStartX() + (startTick(events, i) / barTicks(score, m)) * span;
+            layout.events.set(e.id, { m, s, i, v, x: x0, width: Math.max(12, (eventTicksOf(e) / barTicks(score, m)) * span - 4) });
           });
           continue;
         }
@@ -516,7 +618,7 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
           if (el) layout.elements.set(e.id, el);
           if (e.tie && !isRest(e)) ties.push({ from: e, s, m, v });
           if (e.slurEnd && !isRest(e)) slurs.push({ from: e, s, m });
-          if (e.harmony || (lyricsOf(e).length && !isRest(e))) {
+          if (e.harmony || e.text || (lyricsOf(e).length && !isRest(e))) {
             let top = st.getYForLine(0);
             let bottom = st.getYForLine(4);
             try {
@@ -548,6 +650,17 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
                 text: prettyChord(e.harmony),
               });
             }
+            if (e.text) {
+              textItems.push({
+                ...base,
+                kind: 'text',
+                group: `${sysIdx}:${s}:t`,
+                baseKey: `${sysIdx}:${s}:t`,
+                line: 0,
+                x: headL,
+                text: e.text,
+              });
+            }
             if (!isRest(e)) {
               for (const { verse, lyric } of lyricsOf(e)) {
                 const labelKey = `${s}:${verse}`;
@@ -568,6 +681,13 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
             }
           }
           noteById.set(e.id, { note: n, m, s });
+          sysOfNote.set(e.id, sysIdx);
+          if (!isRest(e)) {
+            const key = `${sysIdx}:${s}:${v}`;
+            if (!laneNotes.has(key)) laneNotes.set(key, []);
+            laneNotes.get(key)!.push(n);
+          }
+          if (e.spans) for (const sp of e.spans) spans.push({ from: e, s, v, kind: sp.kind, end: sp.end });
         });
         }
       });
@@ -575,8 +695,34 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
     });
 
     if (staffCount > 1) {
-      new StaveConnector(firstStaves[0], firstStaves[staffCount - 1]).setType('brace').setContext(ctx).draw();
       new StaveConnector(firstStaves[0], firstStaves[staffCount - 1]).setType('singleLeft').setContext(ctx).draw();
+      // braces join the staves of one instrument; a bracket groups the instruments of the ensemble
+      for (const { part, start } of parts) {
+        if (part.staves > 1) {
+          new StaveConnector(firstStaves[start], firstStaves[start + part.staves - 1]).setType('brace').setContext(ctx).draw();
+        }
+      }
+      if (multiPart) {
+        const singles = parts.filter((p) => p.part.staves === 1);
+        if (singles.length > 1) {
+          const a = singles[0].start;
+          const z = singles[singles.length - 1].start;
+          new StaveConnector(firstStaves[a], firstStaves[z]).setType('bracket').setContext(ctx).draw();
+        }
+      }
+    }
+    // instrument names: full on the first system, abbreviated after
+    if (multiPart && firstStaves.length) {
+      ctx.save();
+      ctx.setFont('Georgia, Times New Roman, serif', sysIdx === 0 ? 13 : 12, 'normal');
+      for (const { part, start } of parts) {
+        const label = sysIdx === 0 ? part.name : part.short || part.name;
+        const top = firstStaves[start].getYForLine(0);
+        const bottom = firstStaves[start + part.staves - 1].getYForLine(4);
+        const w = ctx.measureText(label).width;
+        ctx.fillText(label, MARGIN_X + nameW - 14 - w, (top + bottom) / 2 + 4);
+      }
+      ctx.restore();
     }
   });
 
@@ -629,6 +775,56 @@ export function renderScore(host: HTMLElement, score: Score, width: number): Lay
   }
 
   drawTextLines(ctx, textItems);
+
+  // ---- hairpins, pedal, 8va/8vb (split at line breaks) ----
+  for (const sp of spans) {
+    const a = noteById.get(sp.from.id);
+    const b = noteById.get(sp.end);
+    if (!a || !b) continue;
+    const sa = sysOfNote.get(sp.from.id)!;
+    const sb = sysOfNote.get(sp.end)!;
+    const pieces: [StaveNote, StaveNote][] = [];
+    if (sa === sb) pieces.push([a.note, b.note]);
+    else {
+      const first = laneNotes.get(`${sa}:${sp.s}:${sp.v}`) ?? [];
+      const last = laneNotes.get(`${sb}:${sp.s}:${sp.v}`) ?? [];
+      if (first.length) pieces.push([a.note, first[first.length - 1]]);
+      for (let k = sa + 1; k < sb; k++) {
+        const mid = laneNotes.get(`${k}:${sp.s}:${sp.v}`) ?? [];
+        if (mid.length) pieces.push([mid[0], mid[mid.length - 1]]);
+      }
+      if (last.length) pieces.push([last[0], b.note]);
+    }
+    for (const [n1, n2] of pieces) {
+      try {
+        if (sp.kind === 'cresc' || sp.kind === 'dim') {
+          const hp = new StaveHairpin(
+            { firstNote: n1, lastNote: n2 },
+            sp.kind === 'cresc' ? StaveHairpin.type.CRESC : StaveHairpin.type.DECRESC,
+          );
+          hp.setPosition(Modifier.Position.BELOW);
+          hp.setRenderOptions({ height: 10, yShift: 2, leftShiftPx: 0, rightShiftPx: 0 });
+          hp.setContext(ctx).draw();
+        } else if (sp.kind === 'pedal') {
+          const pm = new PedalMarking([n1, n2]);
+          pm.setType(PedalMarking.type.MIXED);
+          pm.setContext(ctx).draw();
+        } else {
+          new TextBracket({
+            start: n1,
+            stop: n2,
+            text: '8',
+            superscript: sp.kind === '8va' ? 'va' : 'vb',
+            position: sp.kind === '8va' ? TextBracketPosition.TOP : TextBracketPosition.BOTTOM,
+          })
+            .setContext(ctx)
+            .draw();
+        }
+      } catch {
+        /* ignore layout failures of a single line */
+      }
+    }
+  }
 
   // ---- slurs ----
   for (const { from, s, m } of slurs) {
