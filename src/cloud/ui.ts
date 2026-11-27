@@ -1,6 +1,6 @@
 import type { Editor } from '../editor/editor';
 import type { Score } from '../model/types';
-import { api, ApiError, shareUrl, type ScoreMeta, type User, type Visibility } from './api';
+import { api, ApiError, embedCode, shareUrl, type ScoreMeta, type User, type Visibility } from './api';
 
 const CLOUD_ID_KEY = 'pianissimo:cloudId';
 const SYNC_DELAY_MS = 8000;
@@ -26,6 +26,15 @@ export class Cloud {
   private conflict = false;
   /** Called when the account or sync state changes (to refresh the top bar). */
   onChange: () => void = () => {};
+  /** The editor is now linked to this library score (or to none). */
+  onLinked: (meta: ScoreMeta | null) => void = () => {};
+  /** We saved the score to the library (revision is the new one). */
+  onSaved: (revision: number) => void = () => {};
+  /**
+   * Set while a live co-editing session runs. Only its leader saves to the library; the others
+   * are kept in step by the session (and told when the leader saved).
+   */
+  live: { leader: boolean } | null = null;
 
   constructor(
     private editor: Editor,
@@ -40,13 +49,26 @@ export class Cloud {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') void this.poll();
     });
+    // back online: send what was written meanwhile, then look for saves made elsewhere
+    window.addEventListener('online', () => {
+      if (!this.user) void this.init();
+      else if (this.status === 'Unsaved changes' && !this.conflict) void this.save().then(() => this.poll());
+      else void this.poll();
+    });
+    window.addEventListener('offline', () => this.onChange());
   }
 
   async init() {
     try {
       this.user = (await api.me()).user;
-    } catch {
-      this.user = null; // server not running: the editor still works locally
+    } catch (err) {
+      // offline or no server: the editor still works locally. Keep the link to the cloud copy,
+      // so saving resumes when the 'online' event retries init
+      this.user = null;
+      if (!(err instanceof ApiError)) {
+        this.onChange();
+        return;
+      }
     }
     if (!this.user) this.forget();
     else if (this.scoreId) {
@@ -55,6 +77,8 @@ export class Cloud {
         const { score } = await api.getScore(this.scoreId);
         this.meta = score;
         this.syncedJson = JSON.stringify(score.data);
+        this.onChange();
+        this.onLinked(score);
       } catch {
         this.forget();
       }
@@ -64,7 +88,7 @@ export class Cloud {
 
   /** Notice saves made in another tab or on another device. */
   private async poll() {
-    if (!this.user || !this.scoreId || !this.meta || this.saving || document.visibilityState !== 'visible') return;
+    if (!this.user || !this.scoreId || !this.meta || this.saving || this.live || document.visibilityState !== 'visible') return;
     let remote: ScoreMeta;
     try {
       remote = (await api.scoreInfo(this.scoreId)).score;
@@ -88,24 +112,44 @@ export class Cloud {
   get status(): string {
     if (!this.user || !this.scoreId) return '';
     if (this.saving) return 'Saving…';
-    return JSON.stringify(this.editor.score) === this.syncedJson ? 'Saved' : 'Unsaved changes';
+    if (JSON.stringify(this.editor.score) === this.syncedJson) return 'Saved';
+    // in a live session someone else saves; changes are already shared with everyone
+    if (this.live && !this.live.leader) return 'Live';
+    return navigator.onLine ? 'Unsaved changes' : 'Offline: kept in this browser';
   }
 
   /** Forget the link to a cloud copy (new score, opened a file…). */
   forget() {
+    const had = this.scoreId !== null;
     this.scoreId = null;
     this.meta = null;
     this.syncedJson = '';
     localStorage.removeItem(CLOUD_ID_KEY);
     this.onChange();
+    if (had) this.onLinked(null);
   }
 
   private link(meta: ScoreMeta, json: string) {
+    const changed = this.scoreId !== meta.id;
     this.scoreId = meta.id;
     this.meta = meta;
     this.syncedJson = json;
     localStorage.setItem(CLOUD_ID_KEY, String(meta.id));
     this.onChange();
+    if (changed) this.onLinked(meta);
+  }
+
+  /** The live session's leader saved: our copy (the same score) is now that revision. */
+  markSaved(revision: number) {
+    if (!this.meta) return;
+    this.meta = { ...this.meta, revision };
+    this.syncedJson = JSON.stringify(this.editor.score);
+    this.onChange();
+  }
+
+  /** The library score the editor is linked to, if any. */
+  get current(): ScoreMeta | null {
+    return this.meta;
   }
 
   // ------------------------------------------------------------------ saving
@@ -123,6 +167,7 @@ export class Cloud {
           const base = this.meta?.id === this.scoreId ? this.meta.revision : undefined;
           this.link((await api.updateScore(this.scoreId, { data: this.editor.score, base_revision: base, force })).score, json);
           this.conflict = false;
+          this.onSaved(this.meta!.revision);
         } catch (err) {
           // the cloud copy was deleted elsewhere: save as a new one
           if (err instanceof ApiError && err.status === 404) this.link((await api.createScore(this.editor.score)).score, json);
@@ -150,7 +195,8 @@ export class Cloud {
     if (!this.user || !this.scoreId) return;
     clearTimeout(this.syncTimer);
     this.syncTimer = window.setTimeout(() => {
-      if (this.status === 'Unsaved changes' && !this.conflict) void this.save();
+      // offline: nothing is sent; the 'online' handler saves later. Live: only the leader saves
+      if (this.status === 'Unsaved changes' && !this.conflict && (!this.live || this.live.leader)) void this.save();
     }, SYNC_DELAY_MS);
   }
 
@@ -195,6 +241,20 @@ export class Cloud {
             <input id="shareLink" readonly />
             <button class="primary small" id="shareCopy">Copy link</button>
             <a id="shareOpen" target="_blank" rel="noopener">Open ↗</a>
+          </div>
+          <div class="share-editors" id="shareEditorsRow">
+            <h3>Edit together</h3>
+            <p class="hint" id="shareEditorsHint">People you invite can open this score from their library and edit it with you, live.</p>
+            <ul id="shareEditors" class="editor-list"></ul>
+            <form id="shareInvite" class="invite-form">
+              <input type="email" name="email" placeholder="Their Pianissimo account email" aria-label="Email of the person to invite" required />
+              <button type="submit" class="small">Invite</button>
+            </form>
+          </div>
+          <div class="share-embed" id="shareEmbedRow" hidden>
+            <label for="shareEmbed">Embed on a website or blog</label>
+            <textarea id="shareEmbed" readonly rows="3" spellcheck="false"></textarea>
+            <button class="small" id="shareEmbedCopy">Copy embed code</button>
           </div>
         </div>
       </div>
@@ -311,6 +371,29 @@ export class Cloud {
         }
       }),
     );
+    this.el<HTMLFormElement>('shareInvite').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = this.el<HTMLFormElement>('shareInvite').elements.namedItem('email') as HTMLInputElement;
+      if (!this.scoreId) return;
+      try {
+        const { editors } = await api.addEditor(this.scoreId, input.value);
+        input.value = '';
+        this.renderEditors(editors);
+        this.toast('Invited: the score is now in their library');
+      } catch (ex) {
+        this.toast((ex as Error).message);
+      }
+    });
+    this.el('shareEmbedCopy').addEventListener('click', async () => {
+      const box = this.el<HTMLTextAreaElement>('shareEmbed');
+      try {
+        await navigator.clipboard.writeText(box.value);
+      } catch {
+        box.select();
+        document.execCommand('copy');
+      }
+      this.toast('Embed code copied: paste it into your page’s HTML');
+    });
     this.el('shareCopy').addEventListener('click', async () => {
       const input = this.el<HTMLInputElement>('shareLink');
       try {
@@ -345,6 +428,40 @@ export class Cloud {
     this.toast('Signed out. Your score stays in this browser.');
   }
 
+  /** Download everything stored about this account, as one JSON file. */
+  async downloadMyData() {
+    try {
+      const { data } = await api.exportAccount();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pianissimo-my-data.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (ex) {
+      this.toast((ex as Error).message);
+    }
+  }
+
+  /** Delete the account and everything in it, after the password. */
+  async deleteAccount() {
+    if (!this.user) return;
+    const ok = confirm(
+      'Delete your account? Your library, shared scores, classes you teach, your work in classes, comments and likes are deleted for good. Download your data first if you want a copy.',
+    );
+    if (!ok) return;
+    const password = prompt('Type your password to confirm:');
+    if (!password) return;
+    try {
+      await api.deleteAccount(password);
+      this.user = null;
+      this.forget();
+      this.toast('Your account and its data were deleted. The score open here stays in this browser.');
+    } catch (ex) {
+      this.toast((ex as Error).message);
+    }
+  }
+
   async openLibrary(): Promise<void> {
     if (!this.user) return this.showAuth('Sign in to see your saved scores.', () => this.openLibrary());
     this.el('libraryModal').hidden = false;
@@ -365,10 +482,10 @@ export class Cloud {
       host.innerHTML = scores
         .map(
           (s) => `<div class="lib-row ${s.id === this.scoreId ? 'current' : ''}" data-id="${s.id}">
-            <div class="lib-main"><b>${esc(s.title)}</b><span>${esc(s.composer || '')}</span></div>
-            ${badge(s.visibility)}
+            <div class="lib-main"><b>${esc(s.title)}</b><span>${esc(s.composer || '')}${s.role === 'editor' ? ` · shared by ${esc(s.owner ?? '')}` : ''}</span></div>
+            ${s.role === 'editor' ? '<span class="vis vis-shared">shared</span>' : badge(s.visibility)}
             <span class="lib-date">${new Date(s.updated_at).toLocaleString()}</span>
-            <button data-act="open">Open</button><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button>
+            <button data-act="open">Open</button><button data-act="dup">Duplicate</button>${s.role === 'editor' ? '' : '<button data-act="del" class="danger">Delete</button>'}
           </div>`,
         )
         .join('');
@@ -380,7 +497,7 @@ export class Cloud {
           await api.duplicateScore(id);
           void this.renderLibrary();
         });
-        row.querySelector('[data-act=del]')!.addEventListener('click', async () => {
+        row.querySelector('[data-act=del]')?.addEventListener('click', async () => {
           if (!confirm(`Delete “${title}” from your library? This cannot be undone.`)) return;
           await api.deleteScore(id);
           if (id === this.scoreId) this.forget();
@@ -392,7 +509,8 @@ export class Cloud {
     }
   }
 
-  private async openScore(id: number) {
+  /** Open a library score (own, or shared with this user) in the editor. */
+  async openScore(id: number) {
     try {
       const { score } = await api.getScore(id);
       this.confirmLoad(score.data);
@@ -458,18 +576,61 @@ export class Cloud {
     }
     this.renderShare();
     this.el('shareModal').hidden = false;
+    void api
+      .listEditors(this.scoreId!)
+      .then(({ editors }) => this.renderEditors(editors))
+      .catch(() => this.renderEditors([]));
+  }
+
+  private renderEditors(editors: { id: number; name: string; email: string; role: 'owner' | 'editor' }[]) {
+    const owner = this.meta?.role !== 'editor';
+    this.el('shareInvite').hidden = !owner;
+    this.el('shareEditorsHint').hidden = !owner;
+    const host = this.el('shareEditors');
+    host.innerHTML = editors
+      .map((e) => {
+        const me = e.id === this.user?.id;
+        const canRemove = e.role === 'editor' && (owner || me);
+        return `<li><span><b>${esc(e.name)}</b> <span class="hint">${esc(e.email)}</span></span>
+          <span class="role">${e.role === 'owner' ? 'owner' : 'can edit'}</span>
+          ${canRemove ? `<button class="small" data-remove="${e.id}">${me ? 'Leave' : 'Remove'}</button>` : ''}</li>`;
+      })
+      .join('');
+    host.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const uid = Number(b.dataset.remove);
+        if (!this.scoreId) return;
+        try {
+          await api.removeEditor(this.scoreId, uid);
+          if (uid === this.user?.id) {
+            this.el('shareModal').hidden = true;
+            this.forget();
+            this.toast('You left this score; it is no longer in your library');
+            return;
+          }
+          this.renderEditors(editors.filter((x) => x.id !== uid));
+        } catch (ex) {
+          this.toast((ex as Error).message);
+        }
+      }),
+    );
   }
 
   private renderShare() {
     if (!this.meta) return;
     this.el('shareTitle').textContent = this.meta.title;
-    this.el('shareModal').querySelectorAll<HTMLInputElement>('input[name=vis]').forEach((r) => (r.checked = r.value === this.meta!.visibility));
+    this.el('shareModal').querySelectorAll<HTMLInputElement>('input[name=vis]').forEach((r) => {
+      r.checked = r.value === this.meta!.visibility;
+      r.disabled = this.meta!.role === 'editor';
+    });
     const shared = this.meta.visibility !== 'private';
     this.el('shareLinkRow').hidden = !shared;
+    this.el('shareEmbedRow').hidden = !shared;
     if (shared) {
       const url = shareUrl(this.meta.slug);
       this.el<HTMLInputElement>('shareLink').value = url;
       this.el<HTMLAnchorElement>('shareOpen').href = url;
+      this.el<HTMLTextAreaElement>('shareEmbed').value = embedCode(this.meta.slug, this.meta.title);
     }
   }
 }

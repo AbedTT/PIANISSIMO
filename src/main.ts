@@ -1,4 +1,5 @@
 import './styles.css';
+import './ios.css';
 import { MidiInput } from './audio/midiInput';
 import { Cloud } from './cloud/ui';
 import { Player } from './audio/player';
@@ -17,13 +18,25 @@ import { readMxl } from './io/mxl';
 import { midiToScore, notesToStream, type RawNote } from './io/midiImport';
 import { TPQ } from './model/duration';
 import { KEY_NAMES, pitchName } from './model/pitch';
-import { allEvents, lane, laneOf, newScore, refitMeasures, syncStaves } from './model/score';
+import { allEvents, lane, laneOf, lanesOf, newScore, refitMeasures, syncStaves } from './model/score';
 import { isRest, type Clef, type Pitch, type Score } from './model/types';
 import { renderScore, type Layout } from './render/renderer';
 import { addComment, allComments, commentsAt, removeComment, setResolved } from './model/comments';
 import { TEMPLATES } from './model/templates';
 import { announce, enhanceDialogs, labelIconButtons } from './ui/a11y';
-import { currentLang, LANGUAGES, setLang, translatePage, type Lang } from './ui/i18n';
+import { currentLang, LANGUAGES, setLang, t, tLabel, tMsg, translatePage, type Lang } from './ui/i18n';
+import { registerServiceWorker } from './pwa/register';
+import { drumAt } from './model/drums';
+import { initLive } from './cloud/liveUi';
+import { initClasses } from './cloud/classesUi';
+import { initNotifications } from './cloud/notifyUi';
+import { api } from './cloud/api';
+import { WaitPractice } from './audio/practice';
+import { MicInput, type MicFrame } from './audio/micInput';
+import { NoteTracker } from './audio/pitchDetect';
+import { checkScore, outOfRange, type Issue } from './model/checks';
+import { fillLeftHand, suggestChords } from './model/harmonise';
+import { spellMidi } from './model/pitch';
 import { PianoKeys } from './ui/pianoKeys';
 import { initTheme, setTheme, themeChoice, toggleTheme, type ThemeChoice } from './ui/theme';
 import { Tutorial } from './ui/tutorial';
@@ -45,14 +58,85 @@ const cloud = new Cloud(editor, (m) => toast(m), (s) => {
   editor.load(s);
 });
 midi.onChord = (notes) => {
+  if (practice) return practiseChord(notes);
   if (!recording) editor.writeMidi(notes); // while recording, notes are collected with their timing instead
 };
+
+// ------------------------------------------------------------------ practice: tempo and wait mode
+const TEMPO_KEY = 'pianissimo:practiceTempo';
+/** Practice speed for this browser (not saved in the score). */
+let practiceTempo = 1;
+try {
+  practiceTempo = Math.min(1.5, Math.max(0.5, Number(localStorage.getItem(TEMPO_KEY)) || 1));
+} catch {
+  /* storage blocked */
+}
+let practice: WaitPractice | null = null;
+const midiNames = (midis: number[]) => midis.map((m) => pitchName(spellMidi(m, editor.score.keyFifths))).join(' + ');
+
+function showPracticeStep() {
+  const step = practice?.current;
+  if (!step) return;
+  const e = step.event;
+  editor.setCursor({ m: e.m, s: e.s, i: e.i, v: e.v });
+  updateStatus();
+}
+
+function stopPractice(message?: string) {
+  practice = null;
+  if (practiceEars) {
+    practiceEars = null;
+    stopMicIfIdle();
+  }
+  if (message) toast(message);
+  updateStatus();
+  renderToolbar();
+}
+
+/** Wait mode is listening through the microphone (no MIDI keyboard). */
+let practiceEars: NoteTracker | null = null;
+
+/**
+ * Notes played in wait mode: a chord from a MIDI keyboard or the on-screen piano, or one
+ * note heard by the microphone (matched loosely: the melody note, in any octave).
+ */
+function practiseChord(notes: number[], source: 'midi' | 'piano' | 'mic' = 'midi') {
+  const step = practice?.current;
+  if (!step) return;
+  const heard = source === 'mic';
+  const result = practice!.play(notes, heard);
+  if (result === 'wrong') {
+    const want = heard ? midiNames(step.expected.slice(-1)) : midiNames(step.expected);
+    announce(`Not quite: ${heard ? 'sing or play' : 'play'} ${want}`);
+    toast(`Not quite: ${heard ? 'sing or play' : 'play'} ${want}`);
+    return;
+  }
+  // the right notes: sound them together with what the other parts play at that moment
+  // (not when listening: the microphone would hear it as the next note)
+  const soundOf = (s: number) => editor.score.staves[s]?.sound;
+  if (!heard) void player.playChord([
+    ...step.expected.map((midi) => ({ midi, sound: soundOf(step.event.s) })),
+    ...step.others.filter((o) => !editor.score.staves[o.s]?.mute).map((o) => ({ midi: o.midi, sound: soundOf(o.s) })),
+  ]);
+  if (result === 'done') {
+    const misses = practice!.misses;
+    stopPractice(`Well played: the end! ${misses ? `${misses} wrong ${misses === 1 ? 'try' : 'tries'} on the way.` : 'Not a single wrong note.'}`);
+    return;
+  }
+  showPracticeStep();
+}
 midi.onChange = () => {
   renderToolbar();
   updateStatus();
 };
 
 let layout: Layout | null = null;
+/** Live co-editing (set up with the cloud library below). */
+let liveUi: ReturnType<typeof initLive> | null = null;
+/** Classes and assignments (set up with the cloud library below). */
+let classes: ReturnType<typeof initClasses> | null = null;
+/** The bell (set up with the cloud library below). */
+let bell: ReturnType<typeof initNotifications> | null = null;
 const pianoKeys = new PianoKeys(editor, (m) => announce(m));
 const tutorial = new Tutorial(editor, () => player.playing, (m) => announce(m, 400));
 let commentBar = 0;
@@ -60,7 +144,7 @@ let commentBar = 0;
 // ------------------------------------------------------------------ helpers
 function toast(msg: string) {
   const t = $('toast');
-  t.textContent = msg;
+  t.textContent = tMsg(msg);
   t.classList.add('show');
   clearTimeout((toast as any).timer);
   (toast as any).timer = setTimeout(() => t.classList.remove('show'), 2200);
@@ -101,6 +185,7 @@ const app: AppActions = {
       loop: editor.loop,
       metronome: editor.metronome,
       countIn: editor.countIn,
+      tempoScale: practiceTempo,
     });
     updatePlayButton();
   },
@@ -111,34 +196,9 @@ const app: AppActions = {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,.pianissimo,.musicxml,.xml,.mxl,.mid,.midi';
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0];
-      if (!file) return;
-      try {
-        if (/\.midi?$/i.test(file.name)) {
-          const imported = midiToScore(new Uint8Array(await file.arrayBuffer()), file.name.replace(/\.midi?$/i, ''));
-          player.stop();
-          editor.load(imported);
-          cloud.forget();
-          toast(`Imported “${imported.title}” from MIDI (quantised to 16ths and triplets)`);
-          return;
-        }
-        const text = /\.mxl$/i.test(file.name) ? await readMxl(await file.arrayBuffer()) : await file.text();
-        let score: Score;
-        if (text.trimStart().startsWith('{')) {
-          const parsed = JSON.parse(text);
-          if (!isValidScore(parsed)) throw new Error('Not a Pianissimo score file.');
-          score = parsed;
-        } else {
-          score = fromMusicXML(text);
-        }
-        player.stop();
-        editor.load(score);
-        cloud.forget(); // a file is not (yet) in the library
-        toast(`Opened “${score.title}”`);
-      } catch (err) {
-        toast(`Could not open file: ${(err as Error).message}`);
-      }
+      if (file) void openScoreFile(file);
     };
     input.click();
   },
@@ -258,6 +318,125 @@ const app: AppActions = {
     $<HTMLSelectElement>('themeSelect').value = themeChoice();
     toast(now === 'dark' ? 'Dark mode' : 'Light mode');
   },
+  toggleMicRecording() {
+    void toggleMicRecording();
+  },
+  suggestChords() {
+    const { m, s } = editor.cursor;
+    const ideas = suggestChords(editor.score, m, s);
+    if (!ideas.length) return toast('Write some melody in this bar first, then ask for chords');
+    const anchor = document.querySelector<HTMLElement>('#cursor') ?? $('score');
+    showCommandMenu(
+      anchor,
+      ideas.map((c) => ({
+        id: `chord-${c.symbol}`,
+        label: `${c.symbol}  (${c.degree}, fits ${Math.round(c.fit * 100)}% of the melody)`,
+        group: 'Text',
+        run: () => {
+          editor.setHarmony({ m, s, i: 0 }, c.symbol);
+          toast(`${c.symbol} on bar ${m + 1}`);
+        },
+      })),
+    );
+  },
+  harmoniseAll() {
+    const s = editor.cursor.s;
+    let added = 0;
+    editor.mutate((score) => {
+      score.measures.forEach((bar, m) => {
+        if (bar.staves.some((evs) => evs.some((e) => e.harmony))) return;
+        const best = suggestChords(score, m, s, 1)[0];
+        const first = bar.staves[s]?.[0];
+        if (best && first) {
+          first.harmony = best.symbol;
+          added++;
+        }
+      });
+    });
+    toast(added ? `Suggested chords for ${added} ${added === 1 ? 'bar' : 'bars'} (Ctrl+Z to undo)` : 'Every bar with melody already has a chord');
+  },
+  fillLeftHand() {
+    const score = editor.score;
+    // the bass staff under the cursor, or the bass staff of the cursor's instrument
+    const { part, start } = partOfStaff(score, editor.cursor.s);
+    const candidates = [editor.cursor.s, ...Array.from({ length: part.staves }, (_, k) => start + k)];
+    const target = candidates.find((st) => score.staves[st]?.clef === 'bass');
+    if (target === undefined) return toast('Put the cursor on a piano (grand staff) or a bass staff first');
+    let bars = 0;
+    editor.mutate((sc) => (bars = fillLeftHand(sc, target, sc.accompaniment?.style ?? 'pop')));
+    toast(bars ? `Left hand written in ${bars} ${bars === 1 ? 'bar' : 'bars'}: edit it like any notes (Ctrl+Z to undo)` : 'No empty bars with chord symbols to fill on that staff');
+  },
+  showChecks() {
+    showChecks();
+  },
+  openClasses() {
+    void classes?.open();
+  },
+  async scanMusic() {
+    if (!cloud.user) return cloud.showAuth('Sign in to scan sheet music (the server reads the page).', async () => app.scanMusic());
+    const available = await api.omrAvailable().then((r) => r.available, () => false);
+    if (!available) return toast('Scanning sheet music is not set up on this server.');
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/tiff,application/pdf';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      toast('Reading the music… (this can take a minute)');
+      try {
+        const { result } = await api.scanMusic(file);
+        const bytes = Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0));
+        const xml = result.format === 'mxl' ? await readMxl(bytes.buffer) : new TextDecoder().decode(bytes);
+        const score = fromMusicXML(xml);
+        player.stop();
+        editor.load(score);
+        cloud.forget();
+        toast('Scanned: check the notes against the page, recognition is not perfect (Ctrl+Z returns to your previous score)');
+      } catch (err) {
+        toast((err as Error).message);
+      }
+    };
+    input.click();
+  },
+  toggleTuner() {
+    void toggleTuner();
+  },
+  get practising() {
+    return !!practice;
+  },
+  async toggleWaitMode() {
+    if (practice) return stopPractice('Wait mode off');
+    // a MIDI keyboard if there is one; otherwise the microphone, or else the on-screen piano
+    let viaMidi = false;
+    if (MidiInput.supported) {
+      try {
+        // a browser that asks for MIDI permission may never answer: give it two seconds
+        if (!midi.enabled) await Promise.race([midi.enable(), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 2000))]);
+        viaMidi = midi.devices.length > 0;
+      } catch {
+        /* no MIDI access: fall back below */
+      }
+    }
+    player.stop();
+    // the part under the cursor, from the cursor's bar
+    const { part, start } = partOfStaff(editor.score, editor.cursor.s);
+    const staves = Array.from({ length: part.staves }, (_, k) => start + k);
+    practice = new WaitPractice(editor.score, staves);
+    const from = practice.steps.findIndex((st) => st.event.m >= editor.cursor.m);
+    practice.index = Math.max(0, from);
+    if (!practice.current) return stopPractice('Nothing to play in this part from here');
+    if (viaMidi) toast(`Wait mode: play the highlighted notes of ${part.name} on your MIDI keyboard (Ctrl+Alt+W stops)`);
+    else if (await startMic()) {
+      practiceEars = new NoteTracker();
+      practiceEars.onStart = (m) => practiseChord([m], 'mic');
+      toast(`Wait mode: sing or play the highlighted notes of ${part.name} into the microphone, or use the on-screen keyboard (Ctrl+Alt+W stops)`);
+    } else {
+      pianoKeys.toggle(true);
+      toast(`Wait mode: play the highlighted notes of ${part.name} on the on-screen keyboard (Ctrl+Alt+W stops)`);
+    }
+    showPracticeStep();
+    renderToolbar();
+  },
   startTutorial() {
     hideModals();
     player.stop();
@@ -276,13 +455,42 @@ function run(cmd: Command) {
   cmd.run(editor, app);
 }
 
+/** Open a Pianissimo, MusicXML (.musicxml/.xml/.mxl) or MIDI file into the editor. */
+async function openScoreFile(file: File) {
+  try {
+    if (/\.midi?$/i.test(file.name)) {
+      const imported = midiToScore(new Uint8Array(await file.arrayBuffer()), file.name.replace(/\.midi?$/i, ''));
+      player.stop();
+      editor.load(imported);
+      cloud.forget();
+      toast(`Imported “${imported.title}” from MIDI (quantised to 16ths and triplets)`);
+      return;
+    }
+    const text = /\.mxl$/i.test(file.name) ? await readMxl(await file.arrayBuffer()) : await file.text();
+    let score: Score;
+    if (text.trimStart().startsWith('{')) {
+      const parsed = JSON.parse(text);
+      if (!isValidScore(parsed)) throw new Error('Not a Pianissimo score file.');
+      score = parsed;
+    } else {
+      score = fromMusicXML(text);
+    }
+    player.stop();
+    editor.load(score);
+    cloud.forget(); // a file is not (yet) in the library
+    toast(`Opened “${score.title}”`);
+  } catch (err) {
+    toast(`Could not open file: ${(err as Error).message}`);
+  }
+}
+
 // ------------------------------------------------------------------ rendering
 function sheetWidth() {
   return Math.min(1100, $('sheetScroll').clientWidth - 48);
 }
 
 function renderAll() {
-  layout = renderScore($('score'), editor.score, sheetWidth());
+  layout = renderScore($('score'), editor.score, sheetWidth(), { hints: true });
   $<HTMLInputElement>('title').value = editor.score.title;
   $<HTMLInputElement>('composer').value = editor.score.composer;
   syncSidePanel();
@@ -291,6 +499,7 @@ function renderAll() {
   positionTextEntry();
   updateBreakMarkers();
   updateCommentMarkers();
+  liveUi?.render();
 }
 
 function staveBox(m: number, s: number) {
@@ -309,7 +518,8 @@ function updateCursor(scroll = true) {
   }
   const allSame = editor.events.every((e) => layout!.events.get(e.id)?.x === box.x);
   el.style.display = 'block';
-  el.classList.toggle('voice2', editor.voice === 1);
+  // one colour per voice (as in the toolbar): 1 blue, 2 orange, 3 green, 4 purple
+  for (let v = 1; v < 4; v++) el.classList.toggle(`voice${v + 1}`, editor.voice === v);
   // collapsed whole-bar rest: show the slot as a proportion of the bar
   if (allSame && editor.events.length > 1) {
     const total = editor.events.reduce((a, e) => a + ticks(e), 0);
@@ -349,7 +559,7 @@ function describeCursor() {
   const extras = [ev.harmony && `chord symbol ${ev.harmony}`, commentsAt(editor.score, m).some((c) => !c.resolved) && 'bar has comments']
     .filter(Boolean)
     .join(', ');
-  return `Bar ${m + 1}, beat ${beat}${staff}${editor.voice ? ', voice 2' : ''}: ${what}${extras ? `. ${extras}` : ''}`;
+  return `Bar ${m + 1}, beat ${beat}${staff}${editor.voice ? `, voice ${editor.voice + 1}` : ''}: ${what}${extras ? `. ${extras}` : ''}`;
 }
 
 function updateSelection() {
@@ -391,18 +601,23 @@ function durationLabel(t: string) {
 function updateStatus() {
   const ev = editor.current;
   const clef = editor.score.staves[editor.cursor.s]?.clef ?? '';
-  const what = !ev ? '' : ev.pitches.length ? ev.pitches.map(pitchName).join(' ') : 'rest';
+  const drums = editor.score.staves[editor.cursor.s]?.clef === 'percussion';
+  const what = !ev ? '' : ev.pitches.length ? ev.pitches.map((p) => (drums ? drumAt(p).name : pitchName(p))).join(' + ') : t('rest');
   const paletteHint =
-    editor.palette === 'notes' ? 'Tab: articulations / dynamics' : `Number keys: ${editor.palette} · Esc: back to notes`;
+    editor.palette === 'notes'
+      ? t('Tab: articulations / dynamics')
+      : `${t('Number keys')}: ${t(editor.palette)} · ${t('Esc: back to notes')}`;
   $('status').innerHTML = `
-    <span>Bar <b>${editor.cursor.m + 1}</b> / ${editor.score.measures.length}</span>
-    <span>${partsOf(editor.score).length > 1 ? `<b>${partOfStaff(editor.score, editor.cursor.s).part.name}</b> · ` : ''}Staff <b>${clef}</b>${editor.voice ? ' · <b class="v2">voice 2</b>' : ''}</span>
-    <span>At cursor <b>${what}</b></span>
-    <span>Input <b>${durationLabel(editor.inputType)}${editor.inputDots ? ' dotted' : ''}${editor.inputTriplet ? ' triplet' : ''}</b></span>
-    ${editor.anchor ? `<span>Selected <b>${editor.selected().length}</b> · Ctrl+C / Ctrl+X / Delete</span>` : ''}
-    ${midi.enabled ? `<span>MIDI <b>${midi.devices.join(', ') || 'no device'}</b></span>` : ''}
-    <span>Mode <b>${editor.tool === 'pencil' ? 'click to add notes' : 'keyboard'}</b></span>
-    <span style="margin-left:auto">${paletteHint} · <kbd>?</kbd> all shortcuts</span>`;
+    <span>${t('Bar')} <b>${editor.cursor.m + 1}</b> / ${editor.score.measures.length}</span>
+    <span>${partsOf(editor.score).length > 1 ? `<b>${partOfStaff(editor.score, editor.cursor.s).part.name}</b> · ` : ''}${t('Staff')} <b>${t(clef)}</b>${editor.voice ? ` · <b class="v${editor.voice + 1}">${t('voice')} ${editor.voice + 1}</b>` : ''}</span>
+    <span>${t('At cursor')} <b>${what}</b></span>
+    <span>${t('Input')} <b>${t(durationLabel(editor.inputType))}${editor.inputDots ? ` ${t('dotted')}` : ''}${editor.inputTriplet ? ` ${t('triplet')}` : ''}</b></span>
+    ${editor.anchor ? `<span>${t('Selected')} <b>${editor.selected().length}</b> · Ctrl+C / Ctrl+X / Delete</span>` : ''}
+    ${midi.enabled ? `<span>MIDI <b>${midi.devices.join(', ') || t('no device')}</b></span>` : ''}
+    ${ev && outOfRange(editor.score, editor.cursor.s, ev) ? `<span class="range-warn">⚠ ${outOfRange(editor.score, editor.cursor.s, ev)}</span>` : ''}
+    ${practice?.current ? `<span class="practice-hint">🎹 Play <b>${midiNames(practice.current.expected)}</b> · ${practice.index + 1}/${practice.steps.length}</span>` : ''}
+    <span>${t('Mode')} <b>${t(editor.tool === 'pencil' ? 'click to add notes' : 'keyboard')}</b></span>
+    <span style="margin-left:auto">${paletteHint} · <kbd>?</kbd> ${t('all shortcuts')}</span>`;
 }
 
 function updatePlayButton() {
@@ -434,10 +649,10 @@ player.onEvent = (ev) => {
 function toolButton(cmd: Command, extraClass = '') {
   const b = document.createElement('button');
   b.className = `tool ${extraClass}`;
-  b.innerHTML = `${cmd.icon ?? cmd.label}`;
+  b.innerHTML = `${cmd.icon ?? tLabel(cmd.label)}`;
   const key = cmd.keys?.[0];
   if (key && !key.includes('+')) b.innerHTML += `<small>${prettyKey(key)}</small>`;
-  b.title = `${cmd.label}${key ? ` (${prettyKey(key)})` : ''}`;
+  b.title = `${tLabel(cmd.label)}${key ? ` (${prettyKey(key)})` : ''}`;
   if (cmd.active?.(editor)) b.classList.add('active');
   b.onmousedown = (e) => e.preventDefault(); // keep keyboard focus on the score
   b.onclick = () => run(cmd);
@@ -461,13 +676,13 @@ function renderToolbar() {
   const tabs = document.createElement('div');
   tabs.className = 'tabs';
   for (const [p, label] of [['notes', 'Notes'], ['articulations', 'Articulations'], ['dynamics', 'Dynamics']] as const) {
-    const t = document.createElement('button');
-    t.className = `tab ${editor.palette === p ? 'active' : ''}`;
-    t.textContent = label;
-    t.title = 'Switch with Tab';
-    t.onmousedown = (e) => e.preventDefault();
-    t.onclick = () => editor.setPalette(p);
-    tabs.append(t);
+    const tab = document.createElement('button');
+    tab.className = `tab ${editor.palette === p ? 'active' : ''}`;
+    tab.textContent = t(label);
+    tab.title = 'Switch with Tab';
+    tab.onmousedown = (e) => e.preventDefault();
+    tab.onclick = () => editor.setPalette(p);
+    tabs.append(tab);
   }
   group(tabs);
 
@@ -481,7 +696,7 @@ function renderToolbar() {
     group(...['cresc', 'dim', 'pedal', '8va'].map((k) => toolButton(byId(`span-${k}`))));
     group(toolButton(byId('sharp')), toolButton(byId('flat')), toolButton(byId('natural')));
   } else if (editor.palette === 'articulations') {
-    group(...ARTICULATIONS.map((a) => toolButton(byId(`art-${a.a}`))));
+    group(...ARTICULATIONS.map((a) => toolButton(byId(`art-${a.a}`))), toolButton(byId('tremolo')));
   } else {
     group(...DYNAMICS.map((d) => toolButton(byId(`dyn-${d}`), 'text')));
   }
@@ -511,7 +726,7 @@ function showCommandMenu(anchor: HTMLElement, cmds: Command[]) {
   menu.style.top = `${r.bottom + 4}px`;
   for (const c of cmds) {
     const b = document.createElement('button');
-    b.innerHTML = `<span class="tick">${c.active?.(editor) ? '✓' : ''}</span>${c.label}`;
+    b.innerHTML = `<span class="tick">${c.active?.(editor) ? '✓' : ''}</span>${tLabel(c.label)}`;
     b.onmousedown = (e) => e.preventDefault();
     b.onclick = () => {
       menu.remove();
@@ -545,6 +760,7 @@ function syncSidePanel() {
   $<HTMLInputElement>('transposedToggle').checked = !!s.transposedView;
   $<HTMLInputElement>('tempo').value = String(s.tempo);
   renderSoundPanel();
+  renderMixer();
   const acc = s.accompaniment;
   $<HTMLInputElement>('accOn').checked = !!acc?.enabled;
   $<HTMLSelectElement>('accStyle').value = acc?.style ?? 'pop';
@@ -628,6 +844,83 @@ function updateTransposePreview() {
 
 let soundPanelSig = '';
 /** One sound picker per staff. Rebuilt only when staves or sounds change. */
+const escapeHtml = (x: string) => x.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** Volume, mute and solo per part (and for the chord accompaniment when it is on). */
+function renderMixer() {
+  const host = $('mixer');
+  const s = editor.score;
+  const rows = partsOf(s).map(({ part, start }) => ({ name: part.name || `Staff ${start + 1}`, staves: Array.from({ length: part.staves }, (_, k) => start + k) }));
+  const row = (name: string, key: string, vol: number, mute: boolean, solo: boolean | null) =>
+    `<div class="mix-row" data-key="${key}">
+      <span class="mix-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+      <input type="range" min="0" max="150" step="5" value="${Math.round(vol * 100)}" aria-label="Volume of ${escapeHtml(name)}" />
+      <button type="button" class="mix-btn ${mute ? 'on' : ''}" data-act="mute" title="Mute" aria-pressed="${mute}">M</button>
+      ${solo === null ? '' : `<button type="button" class="mix-btn solo ${solo ? 'on' : ''}" data-act="solo" title="Solo" aria-pressed="${solo}">S</button>`}
+    </div>`;
+  host.innerHTML =
+    rows.map((r, k) => row(r.name, `p${k}`, s.staves[r.staves[0]].volume ?? 1, !!s.staves[r.staves[0]].mute, !!s.staves[r.staves[0]].solo)).join('') +
+    (s.accompaniment?.enabled ? row(t('Chord accompaniment'), 'acc', s.accompaniment.volume ?? 1, false, null) : '');
+  host.querySelectorAll<HTMLElement>('.mix-row').forEach((el) => {
+    const key = el.dataset.key!;
+    const staves = key === 'acc' ? [] : rows[Number(key.slice(1))].staves;
+    const set = (fn: (score: Score) => void) => {
+      player.stop();
+      editor.mutate(fn);
+    };
+    el.querySelector<HTMLInputElement>('input')!.addEventListener('change', (e) => {
+      const v = Number((e.target as HTMLInputElement).value) / 100;
+      set((score) => {
+        if (key === 'acc') score.accompaniment!.volume = v;
+        else for (const st of staves) score.staves[st].volume = v;
+      });
+    });
+    el.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const prop = b.dataset.act as 'mute' | 'solo';
+        set((score) => {
+          const on = !score.staves[staves[0]][prop];
+          for (const st of staves) {
+            if (on) score.staves[st][prop] = true;
+            else delete score.staves[st][prop];
+          }
+        });
+      }),
+    );
+  });
+  $<HTMLInputElement>('reverb').value = String(Math.round((s.reverb ?? 0) * 100));
+  $<HTMLInputElement>('swingToggle').checked = !!s.swing;
+}
+
+function initPracticeControls() {
+  const tempo = $<HTMLInputElement>('practiceTempo');
+  const out = $('practiceTempoOut');
+  const show = () => (out.textContent = `${Math.round(practiceTempo * 100)}%`);
+  tempo.value = String(Math.round(practiceTempo * 100));
+  show();
+  tempo.addEventListener('input', () => {
+    practiceTempo = Number(tempo.value) / 100;
+    show();
+    try {
+      localStorage.setItem(TEMPO_KEY, String(practiceTempo));
+    } catch {
+      /* storage blocked */
+    }
+  });
+  tempo.addEventListener('change', () => {
+    if (player.playing) player.stop(); // the next play uses the new speed
+  });
+  $<HTMLInputElement>('reverb').addEventListener('change', (e) => {
+    const v = Number((e.target as HTMLInputElement).value) / 100;
+    editor.mutate((score) => {
+      if (v) score.reverb = v;
+      else delete score.reverb;
+    });
+    player.setReverb(v);
+  });
+  $<HTMLInputElement>('swingToggle').addEventListener('change', () => run(byId('swing')));
+}
+
 function renderSoundPanel() {
   const staves = editor.score.staves;
   const sig = staves.map((st) => `${st.clef}:${soundById(st.sound).id}`).join(',');
@@ -637,7 +930,7 @@ function renderSoundPanel() {
   host.innerHTML = '';
   staves.forEach((st, s) => {
     const label = document.createElement('label');
-    label.textContent = staves.length > 1 ? `Staff ${s + 1} (${st.clef})` : 'Sound';
+    label.textContent = staves.length > 1 ? `${t('Staff')} ${s + 1} (${t(st.clef)})` : t('Sound');
     const sel = document.createElement('select');
     fillSoundSelect(sel);
     sel.value = soundById(st.sound).id;
@@ -651,6 +944,8 @@ function renderSoundPanel() {
 }
 
 function demoChord(clef: Clef): Pitch[] {
+  // kick, snare and hi-hat together on a drum staff
+  if (clef === 'percussion') return ['F4', 'C5', 'G5'].map((t) => ({ step: t[0] as Pitch['step'], alter: 0, octave: Number(t[1]) }));
   const o = clef === 'bass' ? 3 : 4;
   return [
     { step: 'C', alter: 0, octave: o },
@@ -853,17 +1148,19 @@ function hit(evt: MouseEvent) {
     (b) => x >= b.x && x <= b.x + b.width && y >= b.top - b.spacing * 4 && y <= b.top + b.spacing * 8,
   );
   if (!st) return null;
-  // which voice: pencil keeps the current one; otherwise voice 2 if the click is in the lower half
-  // of a staff whose voice 2 has notes in this bar
-  const v2 = laneOf(editor.score.measures[st.m], st.s, 1);
+  // which voice: pencil keeps the current one; otherwise the voice whose stems point to where
+  // the click is (upper half: voices 1 and 3, lower half: 2 and 4), among those with notes here
+  const bar = editor.score.measures[st.m];
+  const withNotes = lanesOf(bar, st.s).filter(({ v, events }) => !v || events.some((e) => e.pitches.length)).map((l) => l.v);
+  const lower = y > st.top + st.spacing * 2;
   const v =
     editor.tool === 'pencil'
-      ? v2 && editor.cursor.s === st.s
+      ? editor.cursor.s === st.s && laneOf(bar, st.s, editor.voice)
         ? editor.voice
         : 0
-      : v2 && v2.some((e) => e.pitches.length) && y > st.top + st.spacing * 2
-        ? 1
-        : 0;
+      : (withNotes.find((x) => x % 2 === (lower ? 1 : 0) && x === editor.voice) ??
+        withNotes.find((x) => x % 2 === (lower ? 1 : 0)) ??
+        0);
   const events = lane(editor.score, st.m, st.s, v);
   const boxes = events.map((e) => layout!.events.get(e.id)!);
   let i = 0;
@@ -920,7 +1217,7 @@ function initKeyboard() {
   window.addEventListener('keydown', (e) => {
     const target = e.target as HTMLElement;
     const typing = target.matches('input, textarea, select, [contenteditable="true"]');
-    if (['searchModal', 'newModal', 'transposeModal', 'printModal', 'barModal', 'partsModal', 'commentsModal'].some((id) => !$(id).hidden)) {
+    if (['searchModal', 'newModal', 'transposeModal', 'printModal', 'barModal', 'partsModal', 'commentsModal', 'checksModal', 'classesModal'].some((id) => !document.getElementById(id)?.hidden)) {
       return; // modal handles its own keys
     }
     if (!$('helpModal').hidden) {
@@ -941,7 +1238,8 @@ function showModal(id: string) {
   $(id).hidden = false;
 }
 function hideModals() {
-  for (const id of ['helpModal', 'searchModal', 'newModal', 'transposeModal', 'printModal', 'barModal', 'partsModal', 'commentsModal']) {
+  closeSidePanel();
+  for (const id of ['moreModal', 'helpModal', 'searchModal', 'newModal', 'transposeModal', 'printModal', 'barModal', 'partsModal', 'commentsModal', 'checksModal']) {
     $(id).hidden = true;
   }
 }
@@ -955,7 +1253,90 @@ let recording: {
   bpm: number;
   open: Map<number, { t: number; vel: number }>;
   notes: RawNote[];
+  /** Recording from the microphone instead of a MIDI keyboard. */
+  tracker?: NoteTracker;
 } | null = null;
+
+// ------------------------------------------------------------------ microphone: tuner and sung/played recording
+const mic = new MicInput();
+let tunerOn = false;
+const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+
+function showTuner(f: MicFrame | null) {
+  const box = $('tuner');
+  box.hidden = !f;
+  if (!f) return;
+  if (f.midi === null) {
+    $('tunerNote').textContent = '–';
+    $('tunerCents').textContent = 'listening…';
+    $('tunerNeedle').style.left = '50%';
+    box.classList.remove('in-tune');
+    return;
+  }
+  const near = Math.round(f.midi);
+  const cents = Math.round((f.midi - near) * 100);
+  $('tunerNote').textContent = `${NOTE_NAMES[((near % 12) + 12) % 12]}${Math.floor(near / 12) - 1}`;
+  $('tunerCents').textContent = `${cents > 0 ? '+' : ''}${cents} cents · ${f.freq!.toFixed(1)} Hz`;
+  $('tunerNeedle').style.left = `${50 + cents}%`;
+  box.classList.toggle('in-tune', Math.abs(cents) <= 5);
+}
+
+mic.onFrame = (f) => {
+  showTuner(f);
+  recording?.tracker?.push(f);
+  practiceEars?.push(f);
+};
+// the on-screen piano plays into wait mode while it runs
+pianoKeys.onNotes = (midis) => {
+  if (!practice) return false;
+  practiseChord(midis, 'piano');
+  return true;
+};
+
+async function startMic(): Promise<boolean> {
+  try {
+    await mic.start();
+    return true;
+  } catch (err) {
+    const name = (err as Error).name;
+    toast(name === 'NotAllowedError' ? 'The microphone is blocked: allow it in the browser’s address bar, then try again.' : (err as Error).message);
+    return false;
+  }
+}
+
+function stopMicIfIdle() {
+  if (!tunerOn && !recording?.tracker && !practiceEars) {
+    mic.stop();
+    showTuner(null);
+  }
+}
+
+async function toggleTuner() {
+  if (tunerOn) {
+    tunerOn = false;
+    stopMicIfIdle();
+    return;
+  }
+  if (!(await startMic())) return;
+  tunerOn = true;
+  toast('Tuner on: sing or play a note (Ctrl+Alt+U turns it off)');
+}
+
+async function toggleMicRecording() {
+  if (recording) return finishRecording();
+  if (!(await startMic())) return;
+  const { m, s } = editor.cursor;
+  recording = { startsAt: Infinity, m, s, v: editor.voice, bpm: contextAt(editor.score, m).tempo, open: new Map(), notes: [], tracker: new NoteTracker() };
+  updateRecordButton();
+  // count-in clicks only: anything the speakers play would be recorded too
+  const { musicStartsAt } = await player.play(editor.score, {
+    fromId: editor.score.measures[m].staves[0][0]?.id,
+    countIn: true,
+    clicksOnly: true,
+  });
+  if (recording) recording.startsAt = musicStartsAt;
+  toast('Listening: sing or play one line after the count-in. Space stops.');
+}
 
 async function toggleRecording() {
   if (recording) return finishRecording();
@@ -992,6 +1373,11 @@ function finishRecording() {
   const now = performance.now();
   const toTicks = (t: number) => Math.round((((t - rec.startsAt) / 1000) * rec.bpm * TPQ) / 60);
   for (const [note, o] of rec.open) rec.notes.push({ start: toTicks(o.t), end: toTicks(now), midi: note, velocity: o.vel });
+  if (rec.tracker) {
+    rec.tracker.flush(now);
+    for (const n of rec.tracker.notes) rec.notes.push({ start: toTicks(n.start), end: toTicks(n.end), midi: n.midi, velocity: n.velocity });
+    stopMicIfIdle();
+  }
   // notes played during the count-in (more than half a beat early) are ignored
   const notes = rec.notes.filter((n) => n.start > -TPQ / 2).map((n) => ({ ...n, start: Math.max(0, n.start) }));
   if (!notes.length) {
@@ -1181,9 +1567,36 @@ function fillPrintPages(host: HTMLElement) {
   return pages.length;
 }
 
+const ISSUE_ICON: Record<Issue['kind'], string> = { range: '🎚', length: '⏱', tie: '⌒', slur: '⌒', line: '〰', empty: '∅' };
+
+function showChecks() {
+  const issues = checkScore(editor.score);
+  showModal('checksModal');
+  $('checksSummary').textContent = issues.length
+    ? `${issues.length} ${issues.length === 1 ? 'thing' : 'things'} to look at. Click one to go there.`
+    : 'Everything looks right: bars add up, notes are in range, ties and lines are complete.';
+  $('checksList').innerHTML = issues
+    .slice(0, 200)
+    .map((x, k) => `<li><button type="button" data-k="${k}"><span aria-hidden="true">${ISSUE_ICON[x.kind]}</span> ${escapeHtml(x.message)}${editor.score.staves.length > 1 ? ` <span class="hint">· ${escapeHtml(partOfStaff(editor.score, x.s).part.name || `staff ${x.s + 1}`)}</span>` : ''}</button></li>`)
+    .join('');
+  $('checksList').querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
+    b.addEventListener('click', () => {
+      const x = issues[Number(b.dataset.k)];
+      hideModals();
+      editor.setCursor({ m: x.m, s: x.s, i: x.i ?? 0, v: x.v ?? 0 });
+      $('score').focus();
+    }),
+  );
+}
+
 function showPrintPreview() {
   player.stop();
   showModal('printModal');
+  // a reminder of anything that might look wrong on paper
+  const issues = checkScore(editor.score);
+  $('printChecks').hidden = !issues.length;
+  $('printChecks').textContent = `⚠ ${issues.length} ${issues.length === 1 ? 'thing' : 'things'} to check`;
+  $('printChecks').onclick = () => showChecks();
   const p = editor.score.print;
   $<HTMLSelectElement>('pageSize').value = p?.pageSize ?? 'a4';
   $<HTMLSelectElement>('staffSize').value = String(p?.scale ?? 0.8);
@@ -1343,7 +1756,10 @@ function initViewSettings() {
   lang.value = currentLang();
   lang.onchange = () => {
     setLang(lang.value as Lang);
-    updateStatus();
+    if (cloud.user) void api.setLanguage(lang.value).catch(() => {});
+    updateAccountUI();
+    renderHelp();
+    renderAll(); // toolbar, side panel and status bar are built in code
   };
   const keys = $<HTMLInputElement>('keysToggle');
   keys.checked = pianoKeys.open;
@@ -1385,19 +1801,19 @@ function renderHelp() {
     if (!groups.has(c.group)) groups.set(c.group, []);
     groups.get(c.group)!.push(c);
   }
-  const notes = `<section><h4>Writing notes</h4>
-    <div><span>Write note</span><span><kbd>A</kbd>…<kbd>G</kbd></span></div>
-    <div><span>Add note to chord</span><span><kbd>Shift</kbd>+<kbd>A</kbd>…<kbd>G</kbd></span></div>
-    <div><span>Add interval above</span><span><kbd>Alt</kbd>+<kbd>2</kbd>…<kbd>8</kbd></span></div></section>`;
+  const notes = `<section><h4>${t('Writing notes')}</h4>
+    <div><span>${t('Write note')}</span><span><kbd>A</kbd>…<kbd>G</kbd></span></div>
+    <div><span>${t('Add note to chord')}</span><span><kbd>Shift</kbd>+<kbd>A</kbd>…<kbd>G</kbd></span></div>
+    <div><span>${t('Add interval above')}</span><span><kbd>Alt</kbd>+<kbd>2</kbd>…<kbd>8</kbd></span></div></section>`;
   $('helpGrid').innerHTML =
     notes +
     [...groups]
       .map(
         ([g, cmds]) =>
-          `<section><h4>${g}</h4>${cmds
+          `<section><h4>${t(g)}</h4>${cmds
             .map(
               (c) =>
-                `<div><span>${c.label}${c.palette ? ` <span class="palette-note">(${c.palette} tab)</span>` : ''}</span><span>${c
+                `<div><span>${tLabel(c.label)}${c.palette ? ` <span class="palette-note">(${t(c.palette)} ${t('tab')})</span>` : ''}</span><span>${c
                   .keys!.slice(0, 2)
                   .map((k) => `<kbd>${prettyKey(k)}</kbd>`)
                   .join(' ')}</span></div>`,
@@ -1411,12 +1827,14 @@ let searchHits: Command[] = [];
 let searchSel = 0;
 function renderSearch(q: string) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  searchHits = COMMANDS.filter((c) => words.every((w) => `${c.label} ${c.group}`.toLowerCase().includes(w))).slice(0, 40);
+  searchHits = COMMANDS.filter((c) =>
+    words.every((w) => `${c.label} ${c.group} ${tLabel(c.label)} ${t(c.group)}`.toLowerCase().includes(w)),
+  ).slice(0, 40);
   searchSel = Math.min(searchSel, Math.max(0, searchHits.length - 1));
   $('searchList').innerHTML = searchHits
     .map(
       (c, k) =>
-        `<li data-k="${k}" class="${k === searchSel ? 'sel' : ''}">${c.label}<span>${c.keys?.[0] ? prettyKey(c.keys[0]) : ''}</span></li>`,
+        `<li data-k="${k}" class="${k === searchSel ? 'sel' : ''}">${tLabel(c.label)}<span>${c.keys?.[0] ? prettyKey(c.keys[0]) : ''}</span></li>`,
     )
     .join('');
 }
@@ -1522,16 +1940,93 @@ editor.subscribe((kind) => {
   }
 });
 
+// Only a width change needs a new layout: on phones the height changes whenever the browser bar
+// slides in or out, or the on-screen keyboard opens, and re-engraving then would make scrolling jerky.
 let resizeTimer = 0;
+let laidOutWidth = window.innerWidth;
 window.addEventListener('resize', () => {
+  if (window.innerWidth === laidOutWidth) return;
   clearTimeout(resizeTimer);
-  resizeTimer = window.setTimeout(renderAll, 150);
+  resizeTimer = window.setTimeout(() => {
+    laidOutWidth = window.innerWidth;
+    renderAll();
+  }, 150);
 });
+
+// ------------------------------------------------------------------ phones
+// Below 820px the file buttons and side panel do not fit. The top bar keeps Play and tempo and adds
+// two buttons: ⚙︎ slides the side panel up as a sheet and ⋯ opens an action sheet with the rest.
+const MORE_GROUPS = [
+  ['new', 'open', 'save', 'share', 'library'],
+  ['print', 'exportXml', 'exportMidi', 'exportWav', 'exportPng', 'exportSvg', 'download', 'history'],
+  ['recordMic', 'midi', 'record', 'classes'],
+  ['search', 'help', 'tutorial'],
+];
+function openSidePanel() {
+  hideModals();
+  $('side').classList.add('open');
+  $('sideScrim').hidden = false;
+  $('panelBtn').setAttribute('aria-expanded', 'true');
+  $('sideDone').focus();
+}
+function closeSidePanel() {
+  if (!$('side').classList.contains('open')) return;
+  $('side').classList.remove('open');
+  $('sideScrim').hidden = true;
+  $('panelBtn').setAttribute('aria-expanded', 'false');
+}
+function openMoreSheet() {
+  const known = new Set(COMMANDS.map((c) => c.id));
+  $('moreList').innerHTML = MORE_GROUPS.map(
+    (ids) =>
+      `<div class="sheet-group">${ids
+        .filter((id) => known.has(id))
+        .map((id) => `<button type="button" data-more="${id}">${escapeHtml(tLabel(byId(id).label))}</button>`)
+        .join('')}</div>`,
+  ).join('');
+  hideModals();
+  $('moreModal').hidden = false;
+  $('moreList').querySelector<HTMLElement>('button')?.focus();
+}
+function initPhone() {
+  $('panelBtn').addEventListener('click', () => ($('side').classList.contains('open') ? closeSidePanel() : openSidePanel()));
+  $('sideDone').addEventListener('click', closeSidePanel);
+  $('sideScrim').addEventListener('click', closeSidePanel);
+  $('side').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('side').classList.contains('open')) closeSidePanel();
+  });
+  $('moreBtn').addEventListener('click', openMoreSheet);
+  $('moreList').addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-more]');
+    if (!b) return;
+    hideModals();
+    run(byId(b.dataset.more!));
+  });
+  $('moreModal').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideModals();
+  });
+  // Drop-down menus open on hover or focus on a desktop. iOS does not focus a tapped button, so a tap toggles them too.
+  document.querySelectorAll<HTMLElement>('.menu-trigger').forEach((trigger) => {
+    trigger.addEventListener('click', () => {
+      const menu = trigger.closest('.menu')!;
+      const open = !menu.classList.contains('open');
+      document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open'));
+      menu.classList.toggle('open', open);
+    });
+  });
+  document.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    document.querySelectorAll('.menu.open').forEach((m) => {
+      if (!m.contains(t) || t.closest('.menu-list button')) m.classList.remove('open');
+    });
+  });
+}
 
 initSidePanel();
 initMouse();
 initKeyboard();
 initModals();
+initPhone();
 initTextEntry();
 initAccompanimentPanel();
 initTransposeDialog();
@@ -1541,12 +2036,13 @@ initInstruments();
 initComments();
 initViewSettings();
 initTemplates();
+initPracticeControls();
 enhanceDialogs();
 labelIconButtons();
 translatePage();
 document.fonts.ready.then(renderAll);
 // first visit: offer the tutorial
-if (!Tutorial.seen && !/[?&](import|tutorial)\b/.test(location.search)) {
+if (!Tutorial.seen && !/[?&](import|file|tutorial|template|join|open|class)\b/.test(location.search)) {
   setTimeout(() => toast('New here? Open “Start the tutorial” in the side panel for a 2-minute tour.'), 1200);
 }
 if (new URLSearchParams(location.search).has('tutorial')) {
@@ -1555,20 +2051,63 @@ if (new URLSearchParams(location.search).has('tutorial')) {
 }
 
 // ------------------------------------------------------------------ account & cloud library
+/** The account whose email language was last sent to the server. */
+let languageSentFor = 0;
+
 function updateAccountUI() {
+  bell?.update();
+  // emails are written in the language the person uses here
+  if (cloud.user && languageSentFor !== cloud.user.id) {
+    languageSentFor = cloud.user.id;
+    void api.setLanguage(currentLang()).catch(() => {});
+  }
   const signedIn = !!cloud.user;
   $('signInBtn').hidden = signedIn;
   $('accountMenu').hidden = !signedIn;
   if (cloud.user) $('accountName').textContent = `👤 ${cloud.user.name} ▾`;
   const status = cloud.status;
   const el = $('cloudStatus');
-  el.textContent = status === 'Saved' ? '✓ Saved' : status;
-  el.className = `cloud-status ${status === 'Unsaved changes' ? 'dirty' : ''}`;
+  el.textContent = status === 'Saved' ? `✓ ${t('Saved')}` : t(status);
+  el.className = `cloud-status ${status === 'Unsaved changes' || status.startsWith('Offline') ? 'dirty' : ''}`;
 }
 cloud.onChange = updateAccountUI;
+liveUi = initLive(editor, cloud, {
+  toast,
+  layout: () => layout,
+  cursorHost: () => $('cursor').parentElement!,
+  indicator: () => $('liveStatus'),
+});
 $('signInBtn').addEventListener('click', () => cloud.showAuth());
 $('signOutBtn').addEventListener('click', () => void cloud.signOut());
-void cloud.init();
+$('myDataBtn').addEventListener('click', () => void cloud.downloadMyData());
+$('deleteAccountBtn').addEventListener('click', () => void cloud.deleteAccount());
+classes = initClasses(cloud, { toast, scoreTitle: () => editor.score.title });
+bell = initNotifications(cloud, {
+  openScore: (id) => void cloud.openScore(id),
+  openClass: (id) => void classes!.open(id),
+});
+void cloud.init().then(() => {
+  // app.html?join=CODE: a class invitation
+  const params = new URLSearchParams(location.search);
+  const code = params.get('join');
+  if (code) {
+    history.replaceState(null, '', location.pathname);
+    void classes!.joinFromLink(code);
+  }
+  // app.html?class=<id>: a class (from a notification or its email)
+  const cls = Number(params.get('class'));
+  if (cls) {
+    history.replaceState(null, '', location.pathname);
+    void classes!.open(cls);
+  }
+  // app.html?open=<id>: a score from the library (e.g. a remix just made on a score page)
+  const open = Number(params.get('open'));
+  if (open) {
+    history.replaceState(null, '', location.pathname);
+    if (cloud.user) void cloud.openScore(open);
+    else cloud.showAuth('Sign in to open this score from your library.', () => cloud.openScore(open));
+  }
+});
 
 // a score handed over by the public viewer ("Open in editor")
 if (new URLSearchParams(location.search).has('import')) {
@@ -1584,6 +2123,39 @@ if (new URLSearchParams(location.search).has('import')) {
     }
   } catch {
     /* ignore a broken hand-over */
+  }
+}
+// installed app: files opened from the desktop ("Open with Pianissimo") arrive through the launch queue
+type LaunchParams = { files: { getFile(): Promise<File> }[] };
+(window as unknown as { launchQueue?: { setConsumer(fn: (p: LaunchParams) => void): void } }).launchQueue?.setConsumer(
+  async (params) => {
+    const handle = params.files[0];
+    if (handle) await openScoreFile(await handle.getFile());
+  },
+);
+registerServiceWorker();
+
+// The desktop launcher (desktop/) opens double-clicked files as app.html?file=/__open/<id>/<name>.
+// Only that same-origin path is accepted, so a link can't make the editor fetch anything else.
+{
+  const src = new URLSearchParams(location.search).get('file');
+  if (src && /^\/__open\/[a-f0-9]{32}\/[^/]+$/.test(src)) {
+    history.replaceState(null, '', location.pathname);
+    void fetch(src)
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((blob) => openScoreFile(new File([blob], decodeURIComponent(src.split('/').pop()!))))
+      .catch((err) => toast(`Could not open the file: ${(err as Error).message}`));
+  }
+}
+
+// app.html?template=lead-sheet opens a template straight away (links from the website)
+{
+  const id = new URLSearchParams(location.search).get('template');
+  const tpl = id && TEMPLATES.find((x) => x.id === id);
+  if (tpl) {
+    history.replaceState(null, '', location.pathname);
+    editor.load(tpl.make());
+    cloud.forget();
   }
 }
 renderAll();

@@ -1,8 +1,13 @@
+import { COMMAND_ROWS, INTERVAL_ROWS, LABEL_PATTERNS, SITE_BLOCKS, STATUS_ROWS } from './i18n-strings';
+import { MESSAGE_PATTERNS, MESSAGE_ROWS } from './i18n-messages';
+import { GUIDE_BLOCKS } from './i18n-guide';
+import { LEGAL_BLOCKS } from './i18n-legal';
+
 /**
- * Interface language for the editor's fixed chrome (menus, side panel, dialogs, status bar
- * labels). Strings are looked up by their English text, so the HTML stays readable and
- * untranslated strings simply stay in English. Command names in the shortcut list and
- * command search are not translated yet.
+ * Interface language for the editor (menus, side panel, dialogs, command names, status bar)
+ * and the website. Strings are looked up by their English text, so the HTML stays readable
+ * and untranslated strings simply stay in English. Website blocks with inline markup are
+ * translated as a whole by their `data-i18n` name.
  */
 export type Lang = 'en' | 'fr' | 'es' | 'de';
 
@@ -29,6 +34,8 @@ const TABLE: [string, string, string, string][] = [
   ['My scores', 'Mes partitions', 'Mis partituras', 'Meine Noten'],
   ['Sign in', 'Se connecter', 'Iniciar sesión', 'Anmelden'],
   ['Sign out', 'Se déconnecter', 'Cerrar sesión', 'Abmelden'],
+  ['Download my data', 'Télécharger mes données', 'Descargar mis datos', 'Meine Daten herunterladen'],
+  ['Delete my account…', 'Supprimer mon compte…', 'Eliminar mi cuenta…', 'Mein Konto löschen…'],
   ['Score setup', 'Réglages de la partition', 'Configuración', 'Partitur-Einstellungen'],
   ['Key signature', 'Armure', 'Armadura', 'Tonart'],
   ['Time signature', 'Mesure', 'Compás', 'Taktart'],
@@ -83,11 +90,17 @@ const TABLE: [string, string, string, string][] = [
 ];
 
 const KEY = 'pianissimo:lang';
-const dict = new Map<string, string[]>(TABLE.map((row) => [row[0], row]));
+const dict = new Map<string, string[]>([...TABLE, ...COMMAND_ROWS, ...STATUS_ROWS, ...INTERVAL_ROWS].map((row) => [row[0], row]));
+const messages = new Map<string, string[]>(MESSAGE_ROWS.map((row) => [row[0], row]));
 const INDEX: Record<Lang, number> = { en: 0, fr: 1, es: 2, de: 3 };
 
 export function currentLang(): Lang {
-  const saved = localStorage.getItem(KEY) as Lang | null;
+  let saved: Lang | null = null;
+  try {
+    saved = localStorage.getItem(KEY) as Lang | null;
+  } catch {
+    /* storage blocked */
+  }
   if (saved && saved in INDEX) return saved;
   const nav = (typeof navigator !== 'undefined' ? navigator.language : 'en').slice(0, 2) as Lang;
   return nav in INDEX ? nav : 'en';
@@ -130,6 +143,59 @@ export function translatePage(root: HTMLElement = document.body, lang = currentL
 }
 
 export function setLang(lang: Lang) {
-  localStorage.setItem(KEY, lang);
+  try {
+    localStorage.setItem(KEY, lang);
+  } catch {
+    /* storage blocked: the choice lasts for this page only */
+  }
   translatePage(document.body, lang);
+}
+
+/** A command label in the current language, including labels built from a template ("Write C"). */
+export function tLabel(english: string, lang = currentLang()): string {
+  if (lang === 'en') return english;
+  const direct = dict.get(english)?.[INDEX[lang]];
+  if (direct) return direct;
+  for (const { re, to } of LABEL_PATTERNS) {
+    const m = re.exec(english);
+    if (m) return to[INDEX[lang] - 1].replace('$1', t(m[1], lang));
+  }
+  return english;
+}
+
+/** A website block by name; English comes from the page (or the fallback given). */
+export function siteText(key: string, english: string, lang = currentLang()): string {
+  if (lang === 'en') return english;
+  return (SITE_BLOCKS[key] ?? GUIDE_BLOCKS[key] ?? LEGAL_BLOCKS[key])?.[INDEX[lang] - 1] ?? english;
+}
+
+const originalHtml = new WeakMap<Element, string>();
+
+/** Translate every `[data-i18n]` block (and `data-i18n-placeholder` inputs) under `root`. */
+export function translateSite(root: ParentNode = document, lang = currentLang()) {
+  document.documentElement.lang = lang;
+  root.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
+    if (!originalHtml.has(el)) originalHtml.set(el, el.innerHTML);
+    el.innerHTML = siteText(el.dataset.i18n!, originalHtml.get(el)!, lang);
+  });
+  root.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => {
+    if (!el.dataset.enPlaceholder) el.dataset.enPlaceholder = el.placeholder;
+    el.placeholder = siteText(el.dataset.i18nPlaceholder!, el.dataset.enPlaceholder, lang);
+  });
+}
+
+/**
+ * A toast or screen-reader message in the current language: a known message, or one built
+ * from a known template (its titles, names and numbers are kept). Anything else stays English.
+ */
+export function tMsg(english: string, lang = currentLang()): string {
+  if (lang === 'en') return english;
+  const i = INDEX[lang];
+  const known = messages.get(english)?.[i] ?? dict.get(english)?.[i];
+  if (known) return known;
+  for (const { re, to } of MESSAGE_PATTERNS) {
+    const m = re.exec(english);
+    if (m) return to[i - 1].replace(/\$(\d)/g, (_, k) => m[Number(k)] ?? '');
+  }
+  return english;
 }

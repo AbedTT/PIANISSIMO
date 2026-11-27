@@ -29,7 +29,8 @@ export function buildPrintPages(score: Score): HTMLElement[] {
   const scratch = document.createElement('div');
   scratch.style.cssText = 'position:absolute;left:-99999px;top:0;';
   document.body.append(scratch);
-  const layout = renderScore(scratch, score, renderW);
+  // a printed part condenses runs of empty bars into multi-measure rests
+  const layout = renderScore(scratch, score, renderW, { multiRests: !!score.partName });
   // keep the root <svg> itself (its font and style attributes matter), not just its contents
   const source = scratch.querySelector('svg')!;
   scratch.remove();

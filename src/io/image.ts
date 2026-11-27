@@ -32,6 +32,13 @@ export async function scoreToSvg(score: Score, width = 1100): Promise<string> {
     const header = 90;
     const height = layout.height + header;
     const inner = svg.innerHTML;
+    // VexFlow sets the ink colour once on its <svg> element; staff lines, stems and barlines inherit it.
+    // Copy those presentation attributes, or the lines come out with no stroke in the exported file.
+    const paint = ['fill', 'stroke', 'stroke-width', 'font-family']
+      .map((a) => [a, svg.getAttribute(a) ?? ({ fill: '#000', stroke: '#000', 'stroke-width': '1' } as Record<string, string>)[a]])
+      .filter(([, v]) => v)
+      .map(([a, v]) => `${a}="${esc(v!)}"`)
+      .join(' ');
     const style = await fontFaces();
     return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="Bravura,Academico">
@@ -39,7 +46,7 @@ export async function scoreToSvg(score: Score, width = 1100): Promise<string> {
 <rect width="100%" height="100%" fill="#fff"/>
 <text x="${width / 2}" y="44" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="28" font-weight="600">${esc(score.title)}</text>
 ${score.composer ? `<text x="${width - 40}" y="74" text-anchor="end" font-family="Georgia, serif" font-size="14">${esc(score.composer)}</text>` : ''}
-<g transform="translate(0 ${header})">${inner}</g>
+<g transform="translate(0 ${header})" ${paint}>${inner}</g>
 </svg>`;
   } finally {
     scratch.remove();

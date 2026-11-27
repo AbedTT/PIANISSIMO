@@ -6,48 +6,59 @@
     <title>Guide · Pianissimo</title>
     <meta name="description" content="How to write music in Pianissimo: notes, chords, lyrics, playback, printing, sharing, and every keyboard shortcut." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   </head>
   <body data-page="guide">
     <main class="wrap">
       <div class="page-head">
-        <h1>Guide</h1>
-        <p>Everything Pianissimo can do, and the keys that do it.</p>
+        <h1 data-i18n="guide.h1">Guide</h1>
+        <p data-i18n="guide.lead">Everything Pianissimo can do, and the keys that do it.</p>
       </div>
       <div class="article">
         <nav class="toc" aria-label="Contents">
-          <a href="#start">Getting started</a>
-          <a href="#notes">Writing notes</a>
-          <a href="#editing">Changing notes</a>
-          <a href="#rhythm">Rests, ties, triplets</a>
-          <a href="#voices">Two voices</a>
-          <a href="#selection">Selection &amp; clipboard</a>
-          <a href="#expression">Articulations &amp; dynamics</a>
-          <a href="#lyrics">Lyrics &amp; verses</a>
-          <a href="#chords">Chord symbols &amp; backing</a>
-          <a href="#bars">Bars, repeats &amp; jumps</a>
-          <a href="#sound">Sounds &amp; playback</a>
-          <a href="#print">Layout &amp; printing</a>
-          <a href="#files">Saving, files &amp; sharing</a>
-          <a href="#shortcuts">All shortcuts</a>
+          <a href="#start" data-i18n="guide.start">Getting started</a>
+          <a href="#notes" data-i18n="guide.notes">Writing notes</a>
+          <a href="#editing" data-i18n="guide.editing">Changing notes</a>
+          <a href="#rhythm" data-i18n="guide.rhythm">Rests, ties, triplets</a>
+          <a href="#voices" data-i18n="guide.voices">Two voices</a>
+          <a href="#selection" data-i18n="guide.selection">Selection &amp; clipboard</a>
+          <a href="#expression" data-i18n="guide.expression">Articulations &amp; dynamics</a>
+          <a href="#lyrics" data-i18n="guide.lyrics">Lyrics &amp; verses</a>
+          <a href="#chords" data-i18n="guide.chords">Chord symbols &amp; backing</a>
+          <a href="#bars" data-i18n="guide.bars">Bars, repeats &amp; jumps</a>
+          <a href="#sound" data-i18n="guide.sound">Sounds &amp; playback</a>
+          <a href="#print" data-i18n="guide.print">Layout &amp; printing</a>
+          <a href="#files" data-i18n="guide.files">Saving, files &amp; sharing</a>
+          <a href="#guitar" data-i18n="guide.guitar">Guitar and drums</a>
+          <a href="#practice" data-i18n="guide.practice">Mixer and practice</a>
+          <a href="#mic" data-i18n="guide.mic">Microphone and tuner</a>
+          <a href="#together" data-i18n="guide.together">Writing together</a>
+          <a href="#classes" data-i18n="guide.classes">Classes and assignments</a>
+          <a href="#scan" data-i18n="guide.scan">Scanning sheet music</a>
+          <a href="#offline" data-i18n="guide.offline">Offline and on your phone</a>
+          <a href="#shortcuts" data-i18n="guide.shortcuts">All shortcuts</a>
         </nav>
         <article class="prose">
-          <h2 id="start">Getting started</h2>
-          <p>Open the <a href="app.html">editor</a>. A blue box, the <b>cursor</b>, sits on the first beat. Everything you type happens at the cursor, and the cursor moves on by itself.</p>
-          <p>Click <b>New</b> to choose an instrument (piano, voice + piano, lead sheet, violin, …), a key, a time signature and a tempo. You can change all of them later in the <b>Score setup</b> panel on the right.</p>
-          <p class="callout">Stuck? Press <kbd>?</kbd> in the editor for every shortcut, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> to search for any command by name.</p>
+          <h2 id="start" data-i18n="guide.start">Getting started</h2>
+          <p data-i18n="gp.start.1">Open the <a href="app.html">editor</a>. A blue box, the <b>cursor</b>, sits on the first beat. Everything you type happens at the cursor, and the cursor moves on by itself.</p>
+          <p data-i18n="gp.start.2">Click <b>New</b> to choose an instrument (piano, voice + piano, lead sheet, violin, …), a key, a time signature and a tempo. You can change all of them later in the <b>Score setup</b> panel on the right.</p>
+          <p class="callout" data-i18n="guide.callout">Stuck? Press <kbd>?</kbd> in the editor for every shortcut, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> to search for any command by name.</p>
 
-          <h2 id="notes">Writing notes</h2>
-          <ol>
+          <h2 id="notes" data-i18n="guide.notes">Writing notes</h2>
+          <ol data-i18n="gp.notes.1">
             <li><b>Choose a length</b>: <kbd>1</kbd> whole, <kbd>2</kbd> half, <kbd>3</kbd> quarter, <kbd>4</kbd> eighth, <kbd>5</kbd> 16th, <kbd>6</kbd> 32nd, <kbd>7</kbd> 64th. <kbd>.</kbd> makes it dotted.</li>
             <li><b>Type the note</b> with <kbd>A</kbd>–<kbd>G</kbd>. Pianissimo picks the octave closest to the previous note, so melodies flow naturally.</li>
             <li>Keep typing. When a bar is full the cursor moves into the next one, and a new bar is added at the end when you need it.</li>
           </ol>
-          <p>A note too long for the space left in the bar is split across the bar line and tied, so a rhythm is never cut short. You can also press <kbd>I</kbd> and click on the staff to place notes with the mouse.</p>
-          <p><b>Chords</b>: <kbd>Shift</kbd>+<kbd>A</kbd>–<kbd>G</kbd> adds a note above the last one; <kbd>Alt</kbd>+<kbd>2</kbd>…<kbd>8</kbd> adds an interval (a third is <kbd>Alt</kbd>+<kbd>3</kbd>).</p>
-          <p><b>MIDI keyboard</b>: click <b>🎹 MIDI</b> (or <kbd>Shift</kbd>+<kbd>M</kbd>) and play; keys pressed together become a chord. Works in Chrome and Edge.</p>
+          <p data-i18n="gp.notes.2">A note too long for the space left in the bar is split across the bar line and tied, so a rhythm is never cut short. You can also press <kbd>I</kbd> and click on the staff to place notes with the mouse.</p>
+          <p data-i18n="gp.notes.3"><b>Chords</b>: <kbd>Shift</kbd>+<kbd>A</kbd>–<kbd>G</kbd> adds a note above the last one; <kbd>Alt</kbd>+<kbd>2</kbd>…<kbd>8</kbd> adds an interval (a third is <kbd>Alt</kbd>+<kbd>3</kbd>).</p>
+          <p data-i18n="gp.notes.4"><b>MIDI keyboard</b>: click <b>🎹 MIDI</b> (or <kbd>Shift</kbd>+<kbd>M</kbd>) and play; keys pressed together become a chord. Works in Chrome and Edge.</p>
 
-          <h2 id="editing">Changing notes</h2>
-          <ul>
+          <h2 id="editing" data-i18n="guide.editing">Changing notes</h2>
+          <ul data-i18n="gp.editing.1">
             <li><kbd>↑</kbd> <kbd>↓</kbd> move a note by step; <kbd>Ctrl</kbd>+<kbd>↑</kbd> <kbd>↓</kbd> by octave; <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> <kbd>↓</kbd> by semitone.</li>
             <li><kbd>=</kbd> sharp, <kbd>-</kbd> flat, <kbd>N</kbd> natural (press again to undo); <kbd>J</kbd> respells (C♯ ↔ D♭).</li>
             <li>Move onto a note with <kbd>←</kbd> <kbd>→</kbd> and press a length key to change its duration.</li>
@@ -55,21 +66,21 @@
             <li><kbd>Alt</kbd>+<kbd>T</kbd> transposes the whole score (key signature and chord symbols too) or just the selection.</li>
           </ul>
 
-          <h2 id="rhythm">Rests, ties, triplets</h2>
-          <p><kbd>0</kbd> writes a rest. <kbd>,</kbd> ties a note to the next one. <kbd>Shift</kbd>+<kbd>3</kbd> switches triplet input on or off: three triplet eighths fill one beat. <kbd>S</kbd> adds a slur to the next note, or over the selected notes. Leftover rests are tidied automatically into clean, beat-aligned values.</p>
+          <h2 id="rhythm" data-i18n="guide.rhythm">Rests, ties, triplets</h2>
+          <p data-i18n="gp.rhythm.1"><kbd>0</kbd> writes a rest. <kbd>,</kbd> ties a note to the next one. <kbd>Shift</kbd>+<kbd>3</kbd> switches triplet input on or off: three triplet eighths fill one beat. <kbd>S</kbd> adds a slur to the next note, or over the selected notes. Leftover rests are tidied automatically into clean, beat-aligned values.</p>
 
-          <h2 id="voices">Two voices on one staff</h2>
-          <p>Press <kbd>V</kbd> to write a second, independent line on the same staff: for example a held melody over moving inner notes, or soprano and alto together. Voice 1 has stems up and a blue cursor; voice 2 has stems down and an orange cursor. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> removes voice 2 from a bar.</p>
+          <h2 id="voices" data-i18n="guide.voices">Up to four voices on one staff</h2>
+          <p data-i18n="gp.voices.1">Press <kbd>V</kbd> to write another independent line on the same staff: a held melody over moving inner notes, or soprano and alto together. <kbd>V</kbd> goes through voices 1, 2, 3 and 4. Voices 1 and 3 have stems up, 2 and 4 stems down, and each has its own cursor colour. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> removes the voice you are on from the bar.</p>
 
-          <h2 id="selection">Selection &amp; clipboard</h2>
-          <p>Hold <kbd>Shift</kbd> with the arrow keys (or <kbd>Shift</kbd>+click) to select. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd> selects bar by bar; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects everything. Then <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd>, <kbd>Delete</kbd>, or transpose with the arrow keys.</p>
+          <h2 id="selection" data-i18n="guide.selection">Selection &amp; clipboard</h2>
+          <p data-i18n="gp.selection.1">Hold <kbd>Shift</kbd> with the arrow keys (or <kbd>Shift</kbd>+click) to select. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd> selects bar by bar; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects everything. Then <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd>, <kbd>Delete</kbd>, or transpose with the arrow keys.</p>
 
-          <h2 id="expression">Articulations &amp; dynamics</h2>
-          <p>Press <kbd>Tab</kbd> to switch the number row: in the <b>Articulations</b> tab <kbd>1</kbd>–<kbd>5</kbd> are staccato, accent, tenuto, marcato and fermata; in the <b>Dynamics</b> tab <kbd>1</kbd>–<kbd>9</kbd> are <i>ppp</i> … <i>sfz</i>. <kbd>Esc</kbd> returns to the notes tab. Dynamics and accents also change the playback volume.</p>
+          <h2 id="expression" data-i18n="guide.expression">Articulations &amp; dynamics</h2>
+          <p data-i18n="gp.expression.1">Press <kbd>Tab</kbd> to switch the number row: in the <b>Articulations</b> tab <kbd>1</kbd>–<kbd>5</kbd> are staccato, accent, tenuto, marcato and fermata; in the <b>Dynamics</b> tab <kbd>1</kbd>–<kbd>9</kbd> are <i>ppp</i> … <i>sfz</i>. <kbd>Esc</kbd> returns to the notes tab. Dynamics and accents also change the playback volume.</p>
 
-          <h2 id="lyrics">Lyrics &amp; verses</h2>
-          <p>Put the cursor on the first note and press <kbd>Ctrl</kbd>+<kbd>L</kbd>. Type a syllable, then:</p>
-          <table>
+          <h2 id="lyrics" data-i18n="guide.lyrics">Lyrics &amp; verses</h2>
+          <p data-i18n="gp.lyrics.1">Put the cursor on the first note and press <kbd>Ctrl</kbd>+<kbd>L</kbd>. Type a syllable, then:</p>
+          <table data-i18n="gp.lyrics.2">
             <tr><th>Key</th><th>Does</th></tr>
             <tr><td><kbd>Space</kbd></td><td>Next note (rests are skipped)</td></tr>
             <tr><td><kbd>-</kbd></td><td>Hyphen to the next syllable of the word</td></tr>
@@ -78,33 +89,54 @@
             <tr><td><kbd>Enter</kbd></td><td>Done</td></tr>
           </table>
 
-          <h2 id="chords">Chord symbols &amp; backing</h2>
-          <p><kbd>Ctrl</kbd>+<kbd>K</kbd> types chord symbols above the staff: <code>C</code>, <code>Am7</code>, <code>F#m7b5</code>, <code>Bbmaj7</code>, <code>G/B</code>… <kbd>Space</kbd> moves to the next note or rest.</p>
-          <p>Turn on <b>Chord accompaniment</b> (<kbd>Alt</kbd>+<kbd>A</kbd>, or in the side panel) and the chords play as a backing band in one of five styles, with its own instrument.</p>
+          <h2 id="chords" data-i18n="guide.chords">Chord symbols &amp; backing</h2>
+          <p data-i18n="gp.chords.1"><kbd>Ctrl</kbd>+<kbd>K</kbd> types chord symbols above the staff: <code>C</code>, <code>Am7</code>, <code>F#m7b5</code>, <code>Bbmaj7</code>, <code>G/B</code>… <kbd>Space</kbd> moves to the next note or rest.</p>
+          <p data-i18n="gp.chords.2">Turn on <b>Chord accompaniment</b> (<kbd>Alt</kbd>+<kbd>A</kbd>, or in the side panel) and the chords play as a backing band in one of five styles, with its own instrument.</p>
 
-          <h2 id="bars">Bars, repeats &amp; jumps</h2>
-          <ul>
+          <h2 id="bars" data-i18n="guide.bars">Bars, repeats &amp; jumps</h2>
+          <ul data-i18n="gp.bars.1">
             <li><kbd>[</kbd> and <kbd>]</kbd> start and end a repeat; <kbd>Ctrl</kbd>+<kbd>]</kbd> marks 1st / 2nd endings.</li>
             <li>The <b>𝄋</b> menu on the toolbar adds Segno, Coda, Fine, To Coda, D.C. and D.S. (al Fine / al Coda). Playback follows every jump.</li>
             <li><kbd>Alt</kbd>+<kbd>Enter</kbd> inserts a bar; <kbd>Ctrl</kbd>+<kbd>Backspace</kbd> deletes one.</li>
           </ul>
 
-          <h2 id="sound">Sounds &amp; playback</h2>
-          <p><kbd>Space</kbd> plays from the cursor's bar, <kbd>Ctrl</kbd>+<kbd>Space</kbd> from the start. With notes selected, <kbd>Space</kbd> plays just the selection; <kbd>L</kbd> loops it. <kbd>Alt</kbd>+<kbd>M</kbd> turns the metronome on, <kbd>Alt</kbd>+<kbd>C</kbd> adds a one-bar count-in. Choose each staff's instrument under <b>Sounds</b>.</p>
+          <h2 id="sound" data-i18n="guide.sound">Sounds &amp; playback</h2>
+          <p data-i18n="gp.sound.1"><kbd>Space</kbd> plays from the cursor's bar, <kbd>Ctrl</kbd>+<kbd>Space</kbd> from the start. With notes selected, <kbd>Space</kbd> plays just the selection; <kbd>L</kbd> loops it. <kbd>Alt</kbd>+<kbd>M</kbd> turns the metronome on, <kbd>Alt</kbd>+<kbd>C</kbd> adds a one-bar count-in. Choose each staff's instrument under <b>Sounds</b>.</p>
 
-          <h2 id="print">Layout &amp; printing</h2>
-          <p><kbd>Ctrl</kbd>+<kbd>P</kbd> opens the page preview: choose A4 or US Letter and a staff size, then <b>Print / Save PDF</b> and pick <i>Save as PDF</i> for a file. <kbd>Ctrl</kbd>+<kbd>Enter</kbd> forces a new line after a bar; <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Enter</kbd> starts a new page.</p>
+          <h2 id="print" data-i18n="guide.print">Layout &amp; printing</h2>
+          <p data-i18n="gp.print.1"><kbd>Ctrl</kbd>+<kbd>P</kbd> opens the page preview: choose A4 or US Letter and a staff size, then <b>Print / Save PDF</b> and pick <i>Save as PDF</i> for a file. <kbd>Ctrl</kbd>+<kbd>Enter</kbd> forces a new line after a bar; <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Enter</kbd> starts a new page.</p>
 
-          <h2 id="files">Saving, files &amp; sharing</h2>
-          <ul>
+          <h2 id="files" data-i18n="guide.files">Saving, files &amp; sharing</h2>
+          <ul data-i18n="gp.files.1">
             <li><b>Autosave</b>: the score you are working on is kept in this browser.</li>
             <li><b>Your library</b>: sign in (free) and <kbd>Ctrl</kbd>+<kbd>S</kbd> saves to <b>My scores</b>, so you can reopen them on any computer.</li>
             <li><b>Share</b>: make a score <i>unlisted</i> (only people with the link) or <i>public</i> (listed on <a href="explore.html">Explore</a>). The link opens a page where anyone can see and play it.</li>
             <li><b>Files</b>: open and export MusicXML (<code>.musicxml</code>, <code>.mxl</code>), so you can work with MuseScore, Flat, Finale, Sibelius and Dorico. You can also export MIDI and download a <code>.pianissimo.json</code> backup.</li>
           </ul>
 
-          <h2 id="shortcuts">All shortcuts</h2>
-          <p>Generated from the editor itself, so this list is always up to date.</p>
+          <h2 id="guitar" data-i18n="guide.guitar">Guitar and drums</h2>
+          <p data-i18n="gp.guitar.1">Choose <b>Guitar + tab</b> in <b>Instruments…</b> (or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> on any staff) for tablature worked out from the notes in standard tuning. <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> draws chord diagrams above the chord symbols. A <b>Drum kit</b> part has one drum per line or space: kick, snare, toms, hi-hat, ride and crash; the status bar names the drums under the cursor.</p>
+
+          <h2 id="practice" data-i18n="guide.practice">Mixer and practice</h2>
+          <p data-i18n="gp.practice.1">In the side panel, <b>Mixer &amp; practice</b> sets the volume of each part with mute and solo, the reverb and swing. <b>Practice tempo</b> slows playback down (or speeds it up) without changing the written tempo. <b>Wait mode</b> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd>) stops on each chord of your part until you play it: on a MIDI keyboard, the on-screen piano, or by singing into the microphone.</p>
+
+          <h2 id="mic" data-i18n="guide.mic">Microphone and tuner</h2>
+          <p data-i18n="gp.mic.1"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> (🎤) counts you in, then listens: sing or play one line and it is written as notes. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>U</kbd> opens a tuner that shows the note, how many cents off it is, and turns green when you are in tune. The sound stays in your browser.</p>
+
+          <h2 id="together" data-i18n="guide.together">Writing together</h2>
+          <p data-i18n="gp.together.1">In <b>Share</b>, invite people by their account email: the score appears in their library. When you both have it open you edit at the same time and see each other’s cursors; <kbd>Ctrl</kbd>+<kbd>Z</kbd> only takes back your own edits. Comment on a bar with 💬 (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>), and use <b>Version history</b> to go back to an earlier save.</p>
+
+          <h2 id="classes" data-i18n="guide.classes">Classes and assignments</h2>
+          <p data-i18n="gp.classes.1"><b>📚 Classes</b> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd>): a teacher creates a class and shares its code or link, then sets the score they are editing as an assignment, with instructions, a due date and marking criteria. Students start it (they get their own copy), hand it in, and see the feedback, grade and marks on top of their score. The due dates can be added to any calendar app.</p>
+
+          <h2 id="scan" data-i18n="guide.scan">Scanning sheet music</h2>
+          <p data-i18n="gp.scan.1"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd> turns a photo or PDF of printed music into an editable score, when the site has a scanning engine set up. Use a straight, sharp photo of one page; then check the notes against the page and fix what the scanner misread.</p>
+
+          <h2 id="offline" data-i18n="guide.offline">Offline and on your phone</h2>
+          <p data-i18n="gp.offline.1">Install Pianissimo from your browser’s menu (<i>Install app</i> or <i>Add to Home Screen</i>): it opens like an app and works without a connection; your library saves again when you are back online. On a touch screen, the on-screen piano (<kbd>Shift</kbd>+<kbd>K</kbd>) writes notes with a tap.</p>
+
+          <h2 id="shortcuts" data-i18n="guide.shortcuts">All shortcuts</h2>
+          <p data-i18n="guide.shortcutsLead">Generated from the editor itself, so this list is always up to date.</p>
           <div id="shortcutTables"></div>
         </article>
       </div>

@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { fullTimeline, makeSynth, salamanderUrls, type Instrument } from './player';
+import { fullTimeline, makeSynth, mixNotes, salamanderUrls, type Instrument } from './player';
 import { GM_BASE, gmSampleUrls, soundById } from './sounds';
 import type { Score } from '../model/types';
 
@@ -15,7 +15,10 @@ const LOAD_TIMEOUT_MS = 20000;
  * (so the export always finishes) and `onFallback` is called.
  */
 export async function renderAudio(score: Score, onFallback?: () => void): Promise<AudioBuffer> {
-  const { notes, length } = fullTimeline(score);
+  // what the mixer lets through, at its volumes (mute and solo included)
+  const full = fullTimeline(score);
+  const notes = mixNotes(score, full.notes);
+  const length = full.length;
   const soundIds = [...score.staves.map((st) => st.sound ?? 'piano'), score.accompaniment?.sound ?? 'piano'];
   const used = new Set(notes.map((n) => n.s)); // only load the instruments that actually play
   const lead = 0.05;

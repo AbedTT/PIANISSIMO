@@ -27,6 +27,26 @@ $defaults = [
     'max_scores_per_user' => 500,
     'auth_attempts_per_15min' => 10,
 
+    // live co-editing (realtime/server.mjs). Empty URL = off; the secret must match the service's
+    'realtime_url' => getenv('PIANISSIMO_REALTIME_URL') ?: '',
+    'realtime_secret' => getenv('PIANISSIMO_REALTIME_SECRET') ?: '',
+    'max_editors_per_score' => 20,
+
+    // notifications by email: off unless a sender is set; site_url makes the links absolute
+    'mail_from' => getenv('PIANISSIMO_MAIL_FROM') ?: '',
+    'site_url' => getenv('PIANISSIMO_SITE_URL') ?: '',
+    // write emails to this file instead of sending them (development, tests)
+    'mail_log' => getenv('PIANISSIMO_MAIL_LOG') ?: '',
+
+    // scanning sheet music: an engine on the server, e.g. Audiveris:
+    //   audiveris -batch -export -output {out} {in}
+    // ({in} = the uploaded photo or PDF, {out} = a folder for the MusicXML). Empty = off.
+    'omr_command' => getenv('PIANISSIMO_OMR_COMMAND') ?: '',
+    'omr_timeout' => 180,
+
+    // people who may review reported content (admin.html), by account email
+    'admins' => array_values(array_filter(array_map('trim', explode(',', strtolower((string) getenv('PIANISSIMO_ADMINS')))))),
+
     // show exception messages in API errors (never enable in production)
     'debug' => (bool) getenv('PIANISSIMO_DEBUG'),
 ];

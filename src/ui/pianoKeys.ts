@@ -14,9 +14,16 @@ const STORAGE = 'pianissimo:keys';
 export class PianoKeys {
   /** Lowest C shown (MIDI number); two octaves are visible. */
   private low = 48;
+  private drawnSpan = 0;
+  private narrow = () => window.matchMedia('(max-width: 560px)').matches;
   private chordMode = false;
   private pending = new Set<number>();
   readonly el: HTMLElement;
+  /**
+   * Takes played notes before they are written (wait mode uses it). Returning true means the
+   * notes were used and nothing is written.
+   */
+  onNotes: ((midis: number[]) => boolean) | null = null;
 
   constructor(
     private editor: Editor,
@@ -106,6 +113,9 @@ export class PianoKeys {
     act('close', () => this.toggle(false));
     this.drawKeys();
     this.syncLengths();
+    window.addEventListener('resize', () => {
+      if ((this.narrow() ? 12 : 24) !== this.drawnSpan) this.drawKeys();
+    });
   }
 
   private shift(by: number) {
@@ -116,7 +126,7 @@ export class PianoKeys {
 
   private commitChord() {
     if (!this.pending.size) return;
-    this.editor.writeMidi([...this.pending]);
+    if (!this.onNotes?.([...this.pending])) this.editor.writeMidi([...this.pending]);
     this.pending.clear();
     this.drawKeys();
   }
@@ -131,6 +141,10 @@ export class PianoKeys {
       this.announce(`${name} ${this.pending.has(midi) ? 'added to' : 'removed from'} chord`);
       return;
     }
+    if (this.onNotes?.([midi])) {
+      this.editor.onPreview?.([spellMidi(midi, this.editor.keyAt(this.editor.cursor.m))], this.editor.cursor.s);
+      return;
+    }
     this.editor.writeMidi([midi]);
   }
 
@@ -140,11 +154,14 @@ export class PianoKeys {
     chordBtn.classList.toggle('active', this.chordMode);
     chordBtn.setAttribute('aria-pressed', String(this.chordMode));
     this.el.querySelector<HTMLElement>('[data-act=commit]')!.hidden = !this.chordMode;
-    this.el.querySelector('.pk-range')!.textContent = `C${this.low / 12 - 1}–B${this.low / 12}`;
+    // two octaves, or one octave of wider keys on a phone (the arrows still reach every octave)
+    const span = this.narrow() ? 12 : 24;
+    this.drawnSpan = span;
+    this.el.querySelector('.pk-range')!.textContent = `C${this.low / 12 - 1}–B${(this.low + span) / 12 - 2}`;
     const whites: string[] = [];
     const blacks: string[] = [];
     let w = 0;
-    for (let midi = this.low; midi < this.low + 24; midi++) {
+    for (let midi = this.low; midi < this.low + span; midi++) {
       const pc = midi % 12;
       const label = `${NAMES[pc]}${Math.floor(midi / 12) - 1}`;
       const on = this.pending.has(midi) ? ' on' : '';

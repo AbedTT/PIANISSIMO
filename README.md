@@ -11,7 +11,10 @@ Built with [VexFlow](https://www.vexflow.com/) (engraving, SMuFL Bravura font), 
 | Website | `index.html` | Home with a live, playable demo score, plus Guide, Explore, About, Privacy and Terms pages |
 | Editor | `app.html` | The notation editor |
 | Viewer | `view.html?s=<link id>` | Public, read-only page for a shared score (play, print, MusicXML, open in editor). Without `?s=` it opens a local MusicXML file |
-| API | `server/api/index.php/...` | Accounts, cloud library, sharing (PHP 8.1+, SQLite or MySQL) |
+| Profile | `profile.html?u=<id>` | A person's public scores and likes |
+| Embed | `embed.html?s=<link id>` | Compact player for an `<iframe>` on another site (the share dialog gives the code) |
+| API | `server/api/index.php/...` | Accounts, cloud library, sharing, editors (PHP 8.1+, SQLite or MySQL) |
+| Realtime | `realtime/server.mjs` | Optional live co-editing service (Node, no dependencies) |
 
 ## Run it (development)
 
@@ -21,7 +24,12 @@ npm run api        # PHP API on http://localhost:8000 (uses php from PATH or XAM
 npm run dev        # site + editor on http://localhost:5173 (proxies /server to the API)
 npm test           # unit tests + API integration tests (the API test is skipped if PHP is missing)
 npm run build      # production build into dist/
+npm run e2e        # end-to-end tests in headless Chrome against dist/ (set CHROME_PATH if Chrome is not found)
 ```
+
+Live co-editing in development: start `PIANISSIMO_REALTIME_SECRET=dev-secret-0123456789 npm run realtime`. Start the API with the same secret and `PIANISSIMO_REALTIME_URL=ws://localhost:8090`.
+
+The production build is an installable app (PWA) that keeps working offline.
 
 The editor works without the API; only sign-in, the library and sharing need it.
 
@@ -50,6 +58,8 @@ The tables are created on the first request.
 **Full guide.** See [docs/DEPLOY.md](docs/DEPLOY.md) for Nginx, the production checklist and CI.
 
 **Other layouts.** If the API lives elsewhere, set `window.PIANISSIMO_API = 'https://…/server/api/index.php'` before the page scripts.
+
+**Desktop app.** `npm run package` builds three installers in `release/`: a Windows setup `.exe`, a portable Windows zip, and a macOS/Linux `.tar.gz` with an install script. No extra tools are needed. See [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Writing music
 
@@ -113,6 +123,22 @@ Entry overwrites, like Flat and MuseScore. Every bar (and every voice) always ad
 - **Audio / image export**: *Export → Audio (.wav)* renders offline (built-in synths are used if the samples cannot be downloaded). *Image (.png / .svg)* saves the whole score as one picture.
 - **Version history**: *Export → Version history…* (`Ctrl`+`Alt`+`H`) lists earlier saves of a library score and restores one (`Ctrl`+`Z` undoes it).
 - **Editing in two places**: if the score was saved from another tab or device, a clean editor updates itself. With unsaved changes you are asked which version to keep; the other one stays in the history.
+- **Edit together**: in the share dialog, invite people by their account email. The score appears in their library. When the realtime service runs, everyone editing sees the others' notes and coloured cursors as they type; undo only takes back your own edits.
+- **Practise**: the side panel's *Mixer & practice* has volume, mute and solo per part, reverb, swing and a practice tempo. *Wait mode* (`Ctrl`+`Alt`+`W`) steps through your part on a MIDI keyboard, the on-screen piano or by singing into the microphone.
+- **Sing or play to write**: `Ctrl`+`Alt`+`R` (🎤) records one line from the microphone; `Ctrl`+`Alt`+`U` is a tuner.
+- **Helpers**:
+  - Notes outside an instrument's range show in red.
+  - `Ctrl`+`Alt`+`K` suggests chords for a bar.
+  - `Ctrl`+`Alt`+`L` writes a left hand from the chord symbols.
+  - `Ctrl`+`Alt`+`C` checks the score before you print.
+- **Classes** (`Ctrl`+`Alt`+`J`): teachers create a class, share its code and set assignments, with optional marking criteria. Students start, hand in and get feedback, a grade and marks. The teacher can open and comment on every student's copy. A due-date agenda exports to your calendar (`.ics`).
+- **Notifications** (🔔): invitations, new assignments, hand-ins, feedback and comments; optional email copies. Admins review reported content on `admin.html`.
+- **Up to four voices per staff**: `V` moves through voices 1–4.
+- **Scan sheet music** (`Ctrl`+`Alt`+`O`): a photo or PDF becomes an editable score, when the server has Audiveris set up ([docs/DEPLOY.md](docs/DEPLOY.md)).
+- **Your data**: the account menu downloads everything about your account, or deletes it.
+- **Community**: shared score pages have likes, comments, *Remix* (your own copy, crediting the original) and a link to the author's profile. Explore can sort by most liked.
+- **Embed**: unlisted and public scores get `<iframe>` code in the share dialog for a compact player on any website.
+- **Offline**: the built app installs from the browser and opens without a network. Cloud saving resumes when you are back online.
 - **PDF / print**: `Ctrl`+`P` opens a page-layout preview (A4 or US Letter, four staff sizes). Systems are never split across pages; page 1 carries the title and composer, later pages a running title and page numbers. Choose *Save as PDF* in the print dialog for a PDF file.
 
 ## Code map
@@ -140,15 +166,23 @@ Entry overwrites, like Flat and MuseScore. Every bar (and every voice) always ad
 | `src/model/parts.ts`, `context.ts` | Instruments/parts; per-bar key, time, clef and tempo context |
 | `src/model/templates.ts`, `comments.ts` | New-score templates (with a compact melody notation) and bar comments |
 | `src/ui/` | On-screen keyboard, tutorial, accessibility helpers, theme and translations |
-| `.github/workflows/ci.yml` | CI: PHP lint, type-check, tests, build |
+| `src/render/renderer.ts` (cache) | Each system is drawn into its own SVG group and reused while nothing it depends on changes |
+| `src/model/drums.ts`, `guitar.ts` | Drum-kit map for percussion staves; guitar tab fingering and chord-diagram search |
+| `src/cloud/live.ts`, `liveUi.ts` | Live co-editing: bar-level edits ordered by the service, pending edits re-applied on top, presence |
+| `realtime/server.mjs` | The realtime relay (WebSocket framing on `node:http`, signed tickets, rooms) |
+| `src/audio/practice.ts`, `pitchDetect.ts`, `micInput.ts` | Wait mode; microphone pitch detection and note tracking |
+| `src/model/checks.ts`, `harmonise.ts` | Score checks and instrument ranges; chord suggestions and the generated left hand |
+| `src/cloud/classesUi.ts`, `server/lib/Classes.php` | Classes, assignments and submissions |
+| `server/lib/Community.php` | Profiles, likes, remixes, comments and reports |
+| `src/pwa/` | Service worker template (filled in at build time) and its registration |
+| `src/ui/i18n*.ts` | Interface and website translations (EN/FR/ES/DE) |
+| `scripts/e2e.mjs` | End-to-end tests: a small DevTools-protocol driver for headless Chrome |
+| `.github/workflows/ci.yml` | CI: PHP lint, type-check, unit/API tests, build, end-to-end tests |
 
 ## Not yet supported
 
-See [docs/ROADMAP.md](docs/ROADMAP.md), *Still open after Phase 14*. In short:
-- live co-editing with shared cursors (saves are conflict-safe, but not merged live);
-- more than two voices per staff;
-- tablature and percussion staves;
-- translated command names;
-- end-to-end browser tests in CI.
+See [docs/ROADMAP.md](docs/ROADMAP.md), section 2. In short:
+- more than four voices per staff (a deliberate limit);
+- the Privacy and Terms texts (and translations) are drafts that a site operator must review before going live.
 
 Deployment details: [docs/DEPLOY.md](docs/DEPLOY.md).

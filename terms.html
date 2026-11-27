@@ -5,28 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Terms · Pianissimo</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   </head>
   <body data-page="terms">
     <main class="wrap">
       <div class="page-head">
-        <h1>Terms of use</h1>
-        <p>The short version: your music is yours. Be respectful with what you share.</p>
+        <h1 data-i18n="tm.title">Terms of use</h1>
+        <p data-i18n="tm.lead">The short version: your music is yours. Be respectful with what you share.</p>
       </div>
       <article class="prose" style="padding-top: 24px">
-        <h2>Your content</h2>
-        <p>You keep all rights to the music you write. By making a score unlisted or public you allow others to view and play it through Pianissimo, and to copy it into their own editor for personal use.</p>
+        <h2 data-i18n="tm.h.content">Your content</h2>
+        <p data-i18n="tm.content">You keep all rights to the music you write. By making a score unlisted or public you allow others to view and play it through Pianissimo, to copy it into their own editor, and to <b>remix</b> it: make their own version, which may be shared with credit to your original. If you do not want that, keep the score private.</p>
 
-        <h2>What you may share</h2>
-        <ul>
-          <li>Share only music you wrote, music in the public domain, or music you have permission to share.</li>
-          <li>Do not share content that is unlawful, hateful or that infringes someone else's rights.</li>
-          <li>Shared scores that break these rules may be made private or removed.</li>
+        <h2 data-i18n="tm.h.share">What you may share and write</h2>
+        <ul data-i18n="tm.share">
+          <li>Share and scan only music you wrote, music in the public domain, or music you have permission to use.</li>
+          <li>Do not share content or write comments that are unlawful, hateful, harassing or that infringe someone else's rights.</li>
+          <li>Anyone can report a comment or a shared score. Reported content may be hidden automatically and reviewed by the site's admins, who may remove comments or make scores private.</li>
         </ul>
 
-        <h2>The service</h2>
-        <p>Pianissimo is provided as is, without warranties. Keep your own backups of important scores: use <b>Download</b> or MusicXML export.</p>
+        <h2 data-i18n="tm.h.classes">Classes</h2>
+        <p data-i18n="tm.classes">Teachers are responsible for the classes they create and the assignments they set. Students' work in a class can be opened, commented on and edited by the teacher.</p>
 
-        <p class="callout">This is a starting template. Whoever runs a Pianissimo site should review these terms and add their name, contact details and governing law.</p>
+        <h2 data-i18n="tm.h.service">The service</h2>
+        <p data-i18n="tm.service">Pianissimo is provided as is, without warranties. Keep your own backups of important scores: use <b>Download</b>, MusicXML export, or <b>Download my data</b>. You can delete your account at any time from the account menu.</p>
+
+        <p class="callout" data-i18n="tm.operator">This is a starting template. Whoever runs a Pianissimo site should review these terms and add their name, contact details and governing law.</p>
       </article>
     </main>
     <script type="module" src="/src/site/site.ts"></script>

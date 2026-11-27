@@ -6,6 +6,10 @@
     <title>Score · Pianissimo</title>
     <meta name="description" content="View and play sheet music made with Pianissimo." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   </head>
   <body data-page="view">
     <main class="wrap">
@@ -20,6 +24,14 @@
         <button class="btn btn-ghost btn-small" id="vXml">⤓ MusicXML</button>
         <button class="btn btn-ghost btn-small" id="vEdit">✎ Open in editor</button>
       </div>
+      <div class="social-bar" id="socialBar" hidden>
+        <a id="vAuthor" class="author-link"></a>
+        <span id="vRemixOf" class="hint"></span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-small like-btn" id="vLike" aria-pressed="false">♡ <span id="vLikes">0</span></button>
+        <button class="btn btn-ghost btn-small" id="vRemix" title="Copy this score into your library to make your own version">♻ Remix</button>
+        <button class="link-btn report" id="vReport">⚑ Report</button>
+      </div>
       <div class="viewer-sheet" id="vSheet" hidden>
         <div id="vScore"></div>
         <div class="playhead" id="vPlayhead"></div>
@@ -30,6 +42,15 @@
         <label class="btn btn-primary">Choose a file<input type="file" id="vFile" accept=".musicxml,.xml,.mxl,.json" hidden /></label>
       </div>
       <p id="vMessage" class="empty" hidden></p>
+      <section class="comments" id="vComments" hidden>
+        <h2>Comments</h2>
+        <ul id="vCommentList" class="comment-list"></ul>
+        <form id="vCommentForm" class="comment-form" hidden>
+          <textarea name="text" rows="2" maxlength="1000" placeholder="Say something nice about this score…" aria-label="Your comment" required></textarea>
+          <button class="btn btn-primary btn-small">Post</button>
+        </form>
+        <p id="vCommentHint" class="hint" hidden><a href="app.html">Sign in</a> (free) to like, remix and comment.</p>
+      </section>
     </main>
     <div id="printPages" class="print-pages"></div>
     <style id="pageStyle">@page { size: A4; margin: 0; }</style>

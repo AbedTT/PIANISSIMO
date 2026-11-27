@@ -4,6 +4,7 @@
  * - dialogs that behave like dialogs: labelled, focus moves in when they open, Tab stays
  *   inside, Escape closes, and focus returns to where it was when they close.
  */
+import { tMsg } from './i18n';
 
 let live: HTMLElement | null = null;
 let timer = 0;
@@ -23,7 +24,7 @@ export function announce(message: string, delay = 120) {
   timer = window.setTimeout(() => {
     // re-setting identical text is not announced again, so clear it first
     live!.textContent = '';
-    requestAnimationFrame(() => (live!.textContent = message));
+    requestAnimationFrame(() => (live!.textContent = tMsg(message)));
   }, delay);
 }
 

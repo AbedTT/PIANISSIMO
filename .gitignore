@@ -18,3 +18,7 @@ Thumbs.db
 # environment files that may contain secrets
 .env
 .env.*
+
+# desktop packages (npm run package)
+build/
+release/

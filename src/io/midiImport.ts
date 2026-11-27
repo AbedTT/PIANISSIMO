@@ -1,6 +1,7 @@
 import { soundById, soundForProgram } from '../audio/sounds';
 import { TPQ } from '../model/duration';
-import { spellMidi } from '../model/pitch';
+import { midiOf, spellMidi } from '../model/pitch';
+import { drumForMidi, drumPitch } from '../model/drums';
 import { newScore, refitMeasures, writeStream, type StreamItem } from '../model/score';
 import type { Clef, Part, Score } from '../model/types';
 
@@ -116,7 +117,6 @@ export function parseMidi(bytes: Uint8Array): MidiFile {
     }
     // one Pianissimo track per channel that has notes (format 0 files mix channels in one track)
     for (const [ch, notes] of byChannel) {
-      if (ch === 9) continue; // General MIDI drums: no percussion staff yet
       out.tracks.push({ name, channel: ch, program: programs.get(ch) ?? 0, notes: notes.sort((a, b) => a.start - b.start) });
     }
     p = end;
@@ -186,7 +186,7 @@ export function notesToStream(notes: RawNote[], key: number, origin = 0): Stream
 /** A whole MIDI file as a score: one part per track/channel, piano-range tracks on a grand staff. */
 export function midiToScore(bytes: Uint8Array, title = 'Imported MIDI'): Score {
   const file = parseMidi(bytes);
-  if (!file.tracks.length) throw new Error('This MIDI file has no notes (drum-only files are not supported yet).');
+  if (!file.tracks.length) throw new Error('This MIDI file has no notes.');
 
   interface Plan {
     part: Part;
@@ -194,6 +194,11 @@ export function midiToScore(bytes: Uint8Array, title = 'Imported MIDI'): Score {
     sound: string;
   }
   const plans: Plan[] = file.tracks.map((t) => {
+    if (t.channel === 9) {
+      // General MIDI drums: a percussion staff, each drum key at its staff position
+      const notes = t.notes.map((n) => ({ ...n, midi: midiOf(drumPitch(drumForMidi(n.midi))) }));
+      return { part: { name: t.name || 'Drums', short: 'Dr.', staves: 1 }, staves: [{ clef: 'percussion' as Clef, notes }], sound: 'drums' };
+    }
     const sound = soundForProgram(t.program);
     const lo = Math.min(...t.notes.map((n) => n.midi));
     const hi = Math.max(...t.notes.map((n) => n.midi));
@@ -227,7 +232,8 @@ export function midiToScore(bytes: Uint8Array, title = 'Imported MIDI'): Score {
   let s = 0;
   for (const plan of plans) {
     for (const st of plan.staves) {
-      writeStream(score, s, notesToStream(st.notes, file.key));
+      // drum positions are plain staff lines and spaces: spell them without the key signature
+      writeStream(score, s, notesToStream(st.notes, st.clef === 'percussion' ? 0 : file.key));
       s++;
     }
   }

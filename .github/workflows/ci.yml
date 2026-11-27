@@ -34,6 +34,9 @@ jobs:
       - name: Lint PHP
         run: find server -name '*.php' -print0 | xargs -0 -n1 php -l
 
+      - name: Check the realtime service and e2e script parse
+        run: node --check realtime/server.mjs && node --check scripts/e2e.mjs
+
       - name: Type-check
         run: npm run typecheck
 
@@ -42,6 +45,10 @@ jobs:
 
       - name: Build
         run: npx vite build
+
+      # headless Chrome (preinstalled on GitHub's Ubuntu runners) driven over the DevTools protocol
+      - name: End-to-end browser tests
+        run: npm run e2e
 
       - name: Upload build
         uses: actions/upload-artifact@v4

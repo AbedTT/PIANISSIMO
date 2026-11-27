@@ -31,6 +31,8 @@ import {
   type StreamItem,
   startTick,
   writeAt,
+  dropLane,
+  MAX_VOICES,
 } from '../model/score';
 import { MAX_VERSES, setLyricOn } from '../model/lyrics';
 import { addPart, ensureParts, movePart, removePart, writtenShift } from '../model/parts';
@@ -124,8 +126,13 @@ export class Editor {
   }
 
   // ---------- events ----------
-  subscribe(fn: Listener) {
+  /** Listen for changes; returns a function that stops listening. */
+  subscribe(fn: Listener): () => void {
     this.listeners.push(fn);
+    return () => {
+      const k = this.listeners.indexOf(fn);
+      if (k >= 0) this.listeners.splice(k, 1);
+    };
   }
   emit(kind: 'score' | 'cursor' | 'ui') {
     for (const l of this.listeners) l(kind);
@@ -185,6 +192,27 @@ export class Editor {
     if (!next) return;
     this.undoStack.push(JSON.stringify(this.score));
     this.restoreSnapshot(next);
+  }
+
+  /**
+   * Show a score changed by a collaborator. With `rebase`, the same change is applied to every
+   * undo/redo step, so undo takes back only our own edits; without it (the score's layout
+   * changed) the history is cleared. Returns whether the history was kept.
+   */
+  applyRemote(score: Score, rebase: ((s: Score) => Score) | null): boolean {
+    const fix = (stack: string[]) => stack.map((json) => JSON.stringify(rebase!(JSON.parse(json))));
+    if (rebase) {
+      this.undoStack = fix(this.undoStack);
+      this.redoStack = fix(this.redoStack);
+    } else {
+      this.undoStack = [];
+      this.redoStack = [];
+    }
+    this.score = score;
+    this.clampCursor();
+    this.autosave();
+    this.emit('score');
+    return !!rebase;
   }
 
   load(score: Score) {
@@ -321,7 +349,7 @@ export class Editor {
     const out: Located[] = [];
     const first = measureAtTick(this.score, r.start);
     for (let s = r.s0; s <= r.s1; s++) {
-      for (const v of [0, 1]) {
+      for (let v = 0; v < MAX_VOICES; v++) {
         for (let m = first; m < this.score.measures.length && barStart(this.score, m) < r.end; m++) {
           let t = barStart(this.score, m);
           laneOf(this.score.measures[m], s, v)?.forEach((e, i) => {
@@ -680,6 +708,39 @@ export class Editor {
     });
   }
 
+  /** Tremolo strokes on the target notes: none → 1 → 2 → 3 → none. Returns the new count. */
+  cycleTremolo(): number {
+    const ts = this.targets().filter((t) => !isRest(t.e));
+    if (!ts.length) return 0;
+    const next = ((ts[0].e.tremolo ?? 0) + 1) % 4;
+    this.updateTargets((e) => {
+      if (isRest(e)) return;
+      if (next) e.tremolo = next;
+      else delete e.tremolo;
+    }, false);
+    return next;
+  }
+
+  /** Guitar tablature under a staff on/off. Returns whether it is now shown. */
+  toggleTab(s = this.cursor.s): boolean {
+    this.mutate((score) => {
+      const st = score.staves[s];
+      if (!st) return;
+      if (st.tab) delete st.tab;
+      else st.tab = true;
+    });
+    return !!this.score.staves[s]?.tab;
+  }
+
+  /** Guitar chord diagrams above the chord symbols on/off. */
+  toggleChordDiagrams(): boolean {
+    this.mutate((score) => {
+      if (score.chordDiagrams) delete score.chordDiagrams;
+      else score.chordDiagrams = true;
+    });
+    return !!this.score.chordDiagrams;
+  }
+
   toggleArticulation(a: Articulation) {
     const ts = this.targets();
     const on = !ts.every((t) => t.e.articulations?.includes(a));
@@ -797,7 +858,7 @@ export class Editor {
     const r = this.selectionRange()!;
     this.clipboard = [];
     for (let s = r.s0; s <= r.s1; s++) {
-      for (const v of [0, 1]) {
+      for (let v = 0; v < MAX_VOICES; v++) {
         const laneEvents = sel.filter((x) => x.s === s && (x.v ?? 0) === v).map((x) => x.e);
         // a second voice that is only rests is not worth copying
         if (!laneEvents.length || (v && laneEvents.every(isRest))) continue;
@@ -1033,32 +1094,41 @@ export class Editor {
 
   // ---------- voices ----------
   /**
-   * Switch the cursor between voice 1 and voice 2 of the staff (Flat/MuseScore style).
-   * Voice 2 is created for this bar on first use; the cursor keeps its beat.
+   * Move the cursor to the next voice of the staff: 1 → 2 → 3 → 4 → 1 (or straight to
+   * voice `to`). A voice is created for this bar on first use; one left with nothing but
+   * rests is removed again. The cursor keeps its beat.
    */
-  toggleVoice() {
+  toggleVoice(to?: number) {
     const { m, s } = this.cursor;
     const tick = startTick(this.events, this.cursor.i);
-    const v = this.voice ? 0 : 1;
+    const from = this.voice;
+    const v = to ?? (from + 1) % MAX_VOICES;
+    if (v === from) return;
     this.anchor = null;
-    if (v && !laneOf(this.score.measures[m], s, 1)) this.mutate((score) => ensureLane(score, m, s, 1));
+    const left = from ? laneOf(this.score.measures[m], s, from) : undefined;
+    if ((v && !laneOf(this.score.measures[m], s, v)) || (left && left.every(isRest))) {
+      this.mutate((score) => {
+        if (left && left.every(isRest)) dropLane(score.measures[m], s, from);
+        if (v) ensureLane(score, m, s, v);
+      });
+    }
     this.cursor = { m, s, v, i: this.indexAtTick(m, s, tick, v) };
     this.clampCursor();
     this.emit('ui');
     this.emit('cursor');
   }
 
-  /** Remove voice 2 from the bar (or selected bars) of the cursor's staff. */
+  /**
+   * Remove the cursor's voice (2–4) from the bar, or selected bars, of the cursor's staff.
+   * From voice 1, voices 2–4 are all removed.
+   */
   removeVoice2() {
     const s = this.cursor.s;
     const ms = this.selectedMeasures();
+    const voices = this.voice ? [this.voice] : [1, 2, 3];
     this.anchor = null;
     this.mutate((score) => {
-      for (const m of ms) {
-        const v2 = score.measures[m].voice2;
-        if (v2?.[s]) v2[s] = null;
-        if (v2 && v2.every((l) => !l)) delete score.measures[m].voice2;
-      }
+      for (const m of ms) for (const v of voices) dropLane(score.measures[m], s, v);
     });
     this.cursor.v = 0;
     this.clampCursor();

@@ -1,0 +1,33 @@
+{
+  "name": "Pianissimo",
+  "short_name": "Pianissimo",
+  "description": "Write sheet music as fast as you can type. Works offline.",
+  "id": "app.html",
+  "start_url": "app.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f7",
+  "theme_color": "#007aff",
+  "categories": ["music", "education", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "New piano score", "url": "app.html?template=blank-piano", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "New lead sheet", "url": "app.html?template=lead-sheet", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "file_handlers": [
+    {
+      "action": "app.html",
+      "accept": {
+        "application/vnd.recordare.musicxml+xml": [".musicxml"],
+        "application/vnd.recordare.musicxml": [".mxl"],
+        "audio/midi": [".mid", ".midi"],
+        "application/json": [".pianissimo"]
+      }
+    }
+  ]
+}

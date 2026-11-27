@@ -1,5 +1,5 @@
 import { soundById } from '../audio/sounds';
-import { barTicks, restsFor } from './score';
+import { barTicks, EXTRA_VOICES, restsFor } from './score';
 import type { Clef, Part, Score } from './types';
 
 /** Instrument templates for the "Instruments" dialog. `transpose` = written minus sounding, in semitones. */
@@ -11,36 +11,42 @@ export interface InstrumentDef {
   sound: string;
   transpose?: number;
   group: string;
+  /** Show guitar tablature under the staff. */
+  tab?: boolean;
+  /** Playable range, lowest and highest sounding MIDI note. */
+  range?: [number, number];
 }
 
 export const INSTRUMENTS: InstrumentDef[] = [
-  { id: 'piano', name: 'Piano', short: 'Pno.', clefs: ['treble', 'bass'], sound: 'piano', group: 'Keyboards' },
-  { id: 'organ', name: 'Organ', short: 'Org.', clefs: ['treble', 'bass'], sound: 'church_organ', group: 'Keyboards' },
-  { id: 'epiano', name: 'Electric Piano', short: 'E.Pno.', clefs: ['treble', 'bass'], sound: 'electric_piano', group: 'Keyboards' },
-  { id: 'harpsichord', name: 'Harpsichord', short: 'Hpd.', clefs: ['treble', 'bass'], sound: 'harpsichord', group: 'Keyboards' },
-  { id: 'soprano', name: 'Soprano', short: 'S.', clefs: ['treble'], sound: 'choir', group: 'Voices' },
-  { id: 'alto', name: 'Alto', short: 'A.', clefs: ['treble'], sound: 'choir', group: 'Voices' },
-  { id: 'tenor', name: 'Tenor', short: 'T.', clefs: ['treble'], sound: 'choir', transpose: 12, group: 'Voices' },
-  { id: 'bass_voice', name: 'Bass', short: 'B.', clefs: ['bass'], sound: 'choir', group: 'Voices' },
-  { id: 'voice', name: 'Voice', short: 'Vo.', clefs: ['treble'], sound: 'choir', group: 'Voices' },
-  { id: 'violin', name: 'Violin', short: 'Vln.', clefs: ['treble'], sound: 'violin', group: 'Strings' },
-  { id: 'viola', name: 'Viola', short: 'Vla.', clefs: ['alto'], sound: 'viola', group: 'Strings' },
-  { id: 'cello', name: 'Cello', short: 'Vc.', clefs: ['bass'], sound: 'cello', group: 'Strings' },
-  { id: 'contrabass', name: 'Double Bass', short: 'Cb.', clefs: ['bass'], sound: 'contrabass', transpose: 12, group: 'Strings' },
-  { id: 'harp', name: 'Harp', short: 'Hp.', clefs: ['treble', 'bass'], sound: 'harp', group: 'Strings' },
-  { id: 'guitar', name: 'Guitar', short: 'Gtr.', clefs: ['treble'], sound: 'guitar_nylon', transpose: 12, group: 'Strings' },
-  { id: 'flute', name: 'Flute', short: 'Fl.', clefs: ['treble'], sound: 'flute', group: 'Woodwinds' },
-  { id: 'oboe', name: 'Oboe', short: 'Ob.', clefs: ['treble'], sound: 'oboe', group: 'Woodwinds' },
-  { id: 'clarinet', name: 'Clarinet in B♭', short: 'Cl.', clefs: ['treble'], sound: 'clarinet', transpose: 2, group: 'Woodwinds' },
-  { id: 'bassoon', name: 'Bassoon', short: 'Bsn.', clefs: ['bass'], sound: 'bassoon', group: 'Woodwinds' },
-  { id: 'alto_sax', name: 'Alto Saxophone', short: 'A.Sax.', clefs: ['treble'], sound: 'alto_sax', transpose: 9, group: 'Woodwinds' },
-  { id: 'tenor_sax', name: 'Tenor Saxophone', short: 'T.Sax.', clefs: ['treble'], sound: 'alto_sax', transpose: 14, group: 'Woodwinds' },
-  { id: 'trumpet', name: 'Trumpet in B♭', short: 'Tpt.', clefs: ['treble'], sound: 'trumpet', transpose: 2, group: 'Brass' },
-  { id: 'horn', name: 'Horn in F', short: 'Hn.', clefs: ['treble'], sound: 'french_horn', transpose: 7, group: 'Brass' },
-  { id: 'trombone', name: 'Trombone', short: 'Tbn.', clefs: ['bass'], sound: 'trombone', group: 'Brass' },
-  { id: 'tuba', name: 'Tuba', short: 'Tba.', clefs: ['bass'], sound: 'tuba', group: 'Brass' },
-  { id: 'marimba', name: 'Marimba', short: 'Mar.', clefs: ['treble', 'bass'], sound: 'marimba', group: 'Percussion' },
-  { id: 'vibraphone', name: 'Vibraphone', short: 'Vib.', clefs: ['treble'], sound: 'vibraphone', group: 'Percussion' },
+  { id: 'piano', name: 'Piano', short: 'Pno.', clefs: ['treble', 'bass'], sound: 'piano', group: 'Keyboards', range: [21, 108] },
+  { id: 'organ', name: 'Organ', short: 'Org.', clefs: ['treble', 'bass'], sound: 'church_organ', group: 'Keyboards', range: [36, 96] },
+  { id: 'epiano', name: 'Electric Piano', short: 'E.Pno.', clefs: ['treble', 'bass'], sound: 'electric_piano', group: 'Keyboards', range: [28, 103] },
+  { id: 'harpsichord', name: 'Harpsichord', short: 'Hpd.', clefs: ['treble', 'bass'], sound: 'harpsichord', group: 'Keyboards', range: [29, 89] },
+  { id: 'soprano', name: 'Soprano', short: 'S.', clefs: ['treble'], sound: 'choir', group: 'Voices', range: [60, 81] },
+  { id: 'alto', name: 'Alto', short: 'A.', clefs: ['treble'], sound: 'choir', group: 'Voices', range: [53, 74] },
+  { id: 'tenor', name: 'Tenor', short: 'T.', clefs: ['treble'], sound: 'choir', transpose: 12, group: 'Voices', range: [48, 69] },
+  { id: 'bass_voice', name: 'Bass', short: 'B.', clefs: ['bass'], sound: 'choir', group: 'Voices', range: [40, 64] },
+  { id: 'voice', name: 'Voice', short: 'Vo.', clefs: ['treble'], sound: 'choir', group: 'Voices', range: [48, 81] },
+  { id: 'violin', name: 'Violin', short: 'Vln.', clefs: ['treble'], sound: 'violin', group: 'Strings', range: [55, 105] },
+  { id: 'viola', name: 'Viola', short: 'Vla.', clefs: ['alto'], sound: 'viola', group: 'Strings', range: [48, 91] },
+  { id: 'cello', name: 'Cello', short: 'Vc.', clefs: ['bass'], sound: 'cello', group: 'Strings', range: [36, 76] },
+  { id: 'contrabass', name: 'Double Bass', short: 'Cb.', clefs: ['bass'], sound: 'contrabass', transpose: 12, group: 'Strings', range: [28, 67] },
+  { id: 'harp', name: 'Harp', short: 'Hp.', clefs: ['treble', 'bass'], sound: 'harp', group: 'Strings', range: [24, 103] },
+  { id: 'guitar', name: 'Guitar', short: 'Gtr.', clefs: ['treble'], sound: 'guitar_nylon', transpose: 12, group: 'Strings', range: [40, 88] },
+  { id: 'guitar_tab', name: 'Guitar + tab', short: 'Gtr.', clefs: ['treble'], sound: 'guitar_steel', transpose: 12, group: 'Strings', tab: true, range: [40, 88] },
+  { id: 'flute', name: 'Flute', short: 'Fl.', clefs: ['treble'], sound: 'flute', group: 'Woodwinds', range: [60, 96] },
+  { id: 'oboe', name: 'Oboe', short: 'Ob.', clefs: ['treble'], sound: 'oboe', group: 'Woodwinds', range: [58, 91] },
+  { id: 'clarinet', name: 'Clarinet in B♭', short: 'Cl.', clefs: ['treble'], sound: 'clarinet', transpose: 2, group: 'Woodwinds', range: [50, 91] },
+  { id: 'bassoon', name: 'Bassoon', short: 'Bsn.', clefs: ['bass'], sound: 'bassoon', group: 'Woodwinds', range: [34, 75] },
+  { id: 'alto_sax', name: 'Alto Saxophone', short: 'A.Sax.', clefs: ['treble'], sound: 'alto_sax', transpose: 9, group: 'Woodwinds', range: [49, 81] },
+  { id: 'tenor_sax', name: 'Tenor Saxophone', short: 'T.Sax.', clefs: ['treble'], sound: 'alto_sax', transpose: 14, group: 'Woodwinds', range: [44, 75] },
+  { id: 'trumpet', name: 'Trumpet in B♭', short: 'Tpt.', clefs: ['treble'], sound: 'trumpet', transpose: 2, group: 'Brass', range: [52, 82] },
+  { id: 'horn', name: 'Horn in F', short: 'Hn.', clefs: ['treble'], sound: 'french_horn', transpose: 7, group: 'Brass', range: [34, 77] },
+  { id: 'trombone', name: 'Trombone', short: 'Tbn.', clefs: ['bass'], sound: 'trombone', group: 'Brass', range: [40, 72] },
+  { id: 'tuba', name: 'Tuba', short: 'Tba.', clefs: ['bass'], sound: 'tuba', group: 'Brass', range: [28, 65] },
+  { id: 'marimba', name: 'Marimba', short: 'Mar.', clefs: ['treble', 'bass'], sound: 'marimba', group: 'Percussion', range: [45, 96] },
+  { id: 'vibraphone', name: 'Vibraphone', short: 'Vib.', clefs: ['treble'], sound: 'vibraphone', group: 'Percussion', range: [53, 89] },
+  { id: 'drums', name: 'Drum kit', short: 'Dr.', clefs: ['percussion'], sound: 'drums', group: 'Percussion' },
 ];
 
 export const instrumentById = (id: string) => INSTRUMENTS.find((i) => i.id === id);
@@ -68,6 +74,13 @@ export function partOfStaff(score: Score, s: number) {
   return all.find((p) => s >= p.start && s < p.start + p.part.staves) ?? all[0];
 }
 
+/** Playable range (sounding MIDI notes) of the instrument on staff `s`, when it is known. */
+export function rangeOfStaff(score: Score, s: number): { lo: number; hi: number; name: string } | null {
+  const { part } = partOfStaff(score, s);
+  const def = part.instrument ? instrumentById(part.instrument) : undefined;
+  return def?.range ? { lo: def.range[0], hi: def.range[1], name: part.name || def.name } : null;
+}
+
 /** Semitones to add to concert pitch to get the written pitch of staff `s` (0 = non-transposing). */
 export function writtenShift(score: Score, s: number): number {
   return partOfStaff(score, s).part.transpose ?? 0;
@@ -86,7 +99,7 @@ function insertStaves(score: Score, at: number, clefs: Clef[], sound: string) {
   score.staves.splice(at, 0, ...clefs.map((clef) => ({ clef, sound })));
   score.measures.forEach((bar, m) => {
     bar.staves.splice(at, 0, ...clefs.map(() => restsFor(barTicks(score, m))));
-    if (bar.voice2) bar.voice2.splice(Math.min(at, bar.voice2.length), 0, ...clefs.map(() => null));
+    for (const f of EXTRA_VOICES) bar[f]?.splice(Math.min(at, bar[f]!.length), 0, ...clefs.map(() => null));
     if (bar.clefs) bar.clefs.splice(at, 0, ...clefs.map(() => null));
   });
 }
@@ -95,7 +108,7 @@ function removeStaves(score: Score, at: number, count: number) {
   score.staves.splice(at, count);
   for (const bar of score.measures) {
     bar.staves.splice(at, count);
-    bar.voice2?.splice(at, count);
+    for (const f of EXTRA_VOICES) bar[f]?.splice(at, count);
     bar.clefs?.splice(at, count);
   }
 }
@@ -105,6 +118,7 @@ export function addPart(score: Score, instrumentId: string, at = ensureParts(sco
   const parts = ensureParts(score);
   const start = partsOf(score)[at]?.start ?? score.staves.length;
   insertStaves(score, start, def.clefs, def.sound);
+  if (def.tab) for (let s = start; s < start + def.clefs.length; s++) score.staves[s].tab = true;
   parts.splice(at, 0, {
     name: def.name,
     short: def.short,
@@ -142,9 +156,11 @@ export function movePart(score: Score, index: number, dir: -1 | 1) {
   swap(score.staves);
   for (const bar of score.measures) {
     swap(bar.staves);
-    if (bar.voice2) {
-      while (bar.voice2.length < score.staves.length) bar.voice2.push(null);
-      swap(bar.voice2);
+    for (const f of EXTRA_VOICES) {
+      const list = bar[f];
+      if (!list) continue;
+      while (list.length < score.staves.length) list.push(null);
+      swap(list);
     }
     if (bar.clefs) swap(bar.clefs);
   }
@@ -166,7 +182,7 @@ export function extractPart(score: Score, index: number): Score {
   copy.measures = copy.measures.map((bar) => ({
     ...bar,
     staves: range(bar.staves) as typeof bar.staves,
-    ...(bar.voice2 ? { voice2: range(bar.voice2) as typeof bar.voice2 } : {}),
+    ...Object.fromEntries(EXTRA_VOICES.filter((f) => bar[f]).map((f) => [f, range(bar[f]!)])),
     ...(bar.clefs ? { clefs: range(bar.clefs) as typeof bar.clefs } : {}),
   }));
   return copy;
@@ -183,6 +199,7 @@ export function scoreFromInstruments(
 ): Score {
   const first = instrumentById(ids[0]) ?? INSTRUMENTS[0];
   const score = make({ ...opts, staves: first.clefs.map((clef) => ({ clef, sound: first.sound })) });
+  if (first.tab) score.staves.forEach((st) => (st.tab = true));
   score.parts = [
     {
       name: first.name,

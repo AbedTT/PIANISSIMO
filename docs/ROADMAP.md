@@ -6,7 +6,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 
 ---
 
-## 1. Where we are (phases 1–14, shipped)
+## 1. Where we are (phases 1–29, shipped)
 
 | Area | Shipped |
 |---|---|
@@ -20,64 +20,27 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 | **Input/output (12)** | MIDI file import; WAV, PNG and SVG export; recording from a MIDI keyboard |
 | **Experience (13)** | On-screen piano and touch layout; templates; interactive tutorial; screen-reader announcements and accessible dialogs; dark mode; FR/ES/DE interface |
 | **Collaboration (14)** | Version history; comments on bars; conflict-safe saving across tabs and devices; CI and a deploy guide |
-| **Quality** | Command registry for shortcuts, toolbar, help and search; 113 unit and API tests; browser-verified rendering |
+| **Finishing (15)** | Incremental rendering (only changed systems are redrawn); editor and website in EN/FR/ES/DE, including command names and the status bar; end-to-end browser tests in CI; `app.html?template=…` links |
+| **Reach (16)** | Embeddable player; installable PWA that works offline; opens `.musicxml`/`.mxl`/`.mid` files from the desktop |
+| **Notation extras (17)** | Tremolos; multi-measure rests in printed parts; drum kit staff; guitar tablature and chord diagrams |
+| **Practice and helpers (19–21)** | Mixer, reverb, practice tempo, swing, MIDI wait mode; record by singing or playing into the microphone, tuner; instrument ranges, chord suggestions, generated left hand, score checks |
+| **Teaching and community (22–23)** | Classes with join codes, assignments, hand-in and feedback; public profiles, likes, remixes, comments with reporting |
+| **Live co-editing (18)** | Invite editors; edit the same score at once with merged bar-level edits, presence cursors and leader-only saving; optional Node realtime service |
+| **Rounding out (24–28)** | Wait mode with the microphone or on-screen piano; grades, marking criteria and a due-date calendar; notifications and an admin screen for reports; translated messages and guide; up to four voices per staff |
+| **Closing the list (29)** | Scanning sheet music (with Audiveris on the server); self-service data download and account deletion; Privacy and Terms rewritten and all legal pages translated (draft for review); emails in each person's language, or a daily digest; voices 3–4 kept clear of 1–2 |
+| **Quality** | Command registry for shortcuts, toolbar, help and search; 181 unit and API tests; 18 end-to-end browser tests (headless Chrome over the DevTools protocol, no extra dependencies), including two-person sessions, a fake microphone, offline use and phone layouts down to 320px |
 
 ---
 
 ## 2. What is missing or needs enhancing
 
-Grouped by area. **Priority**: P1 = core and expected by every user, P2 = important, P3 = nice to have.
+Everything from the original gap list that shipped in phases 7–18 has been removed. **Priority**: P1 = core and expected by every user, P2 = important, P3 = nice to have.
 
-### 2.1 Product surface and platform
-| Item | Priority | Notes |
-|---|---|---|
-| Public website: home, features, guide, about, privacy/terms | P1 | There is no front door; the editor opens straight away |
-| Accounts (sign up, sign in, sign out) | P1 | Needed for cloud saving and sharing |
-| Cloud score library (list, open, rename, delete, duplicate) | P1 | Scores currently live only in one browser's autosave |
-| Share links: public or unlisted read-only score page with playback | P1 | Flat's core loop: write, then share |
-| Embeddable player (`<iframe>`) | P3 | For blogs and teachers |
-| Server API with secure sessions, CSRF protection, rate limits, input validation | P1 | PHP 8 + PDO (SQLite by default, MySQL in production) |
-| Installable PWA and offline editing | P3 | |
-
-### 2.2 Notation completeness
-| Item | Priority | Notes |
-|---|---|---|
-| D.C. / D.S. / Coda / Fine with playback | P1 | Common in lead sheets and hymns |
-| Key, time and clef changes mid-score | P1 | Currently score-wide only |
-| Hairpins (crescendo/diminuendo), pedal marks, 8va/8vb | P2 | |
-| Tempo text and tempo changes ("Allegro", ♩ = 120 mid-piece) | P2 | |
-| Grace notes, tremolos, fermatas on rests | P2 | |
-| Tuplets beyond triplets (duplets, quintuplets, sextuplets) | P2 | The model already stores any ratio; entry and rendering need work |
-| Multi-measure rests in parts | P3 | |
-| More than two voices per staff | P3 | |
-| Multiple named parts/instruments (score with violin + cello + piano) and part extraction | P2 | Today: up to 2 staves in one part |
-| Text annotations, rehearsal marks (A, B, C) | P2 | |
-| Guitar tablature and chord diagrams | P3 | |
-| Percussion staff | P3 | |
-
-### 2.3 Input and output
-| Item | Priority | Notes |
-|---|---|---|
-| MIDI file import | P2 | Export exists |
-| Real-time MIDI recording with quantisation | P3 | |
-| Audio export (WAV) | P2 | Offline render with Tone.js |
-| PNG/SVG export of a page | P3 | |
-| OMR (scan sheet music from a photo or PDF) | P3 | Heavy; server-side (Audiveris) later |
-
-### 2.4 Experience and quality
-| Item | Priority | Notes |
-|---|---|---|
-| Score templates gallery and onboarding tutorial | P2 | |
-| Faster rendering for long scores (incremental re-render) | P2 | The whole score re-renders on each edit |
-| Touch and mobile editing (on-screen piano keyboard) | P2 | |
-| Accessibility: screen-reader descriptions of the cursor position, high-contrast theme | P2 | |
-| Dark mode for the app chrome | P3 | |
-| Internationalisation (EN first, then FR/ES/PT/DE) | P3 | |
-| End-to-end browser tests and CI (GitHub Actions) | P2 | Unit tests only today |
-| Version history (named snapshots) | P3 | |
-| Real-time collaboration and comments | P3 | Largest item; needs WebSockets |
-
----
+| Area | Item | Priority | Planned in |
+|---|---|---|---|
+| Legal | The rewritten Privacy and Terms, and their French, Spanish and German translations, are drafts: a person (the site operator, ideally with legal advice) must review them and add contact details and governing law | P1 before going live | Needs a person |
+| Input | Scanning quality depends on the engine. Audiveris reads clean printed scores well, and handwriting and phone photos taken at an angle poorly. There is no in-app correction step beyond normal editing | P3 | Idea |
+| Notation | More than four voices per staff: a deliberate limit, the same as MuseScore and Sibelius and the usual MusicXML practice | — | Not planned |
 
 ## 3. Architecture decisions for the next phases
 
@@ -156,7 +119,7 @@ Grouped by area. **Priority**: P1 = core and expected by every user, P2 = import
   - Every dialog is labelled, moves focus in, keeps `Tab` inside, closes with `Esc` and returns focus.
   - Icon-only buttons have accessible names.
   - Focus rings are visible.
-- [~] Dark mode (`Ctrl`+`Alt`+`D`, or *Theme* in the side panel; follows the system by default) ✅. **i18n (partial):** English, French, Spanish and German for the fixed interface (menus, side panel, dialogs). Command names in the shortcut sheet, the command search and the status bar are still English
+- [x] Dark mode (`Ctrl`+`Alt`+`D`, or *Theme* in the side panel; follows the system by default). **i18n (completed in Phase 15):** English, French, Spanish and German for the fixed interface (menus, side panel, dialogs). Phase 15 added command names, the status bar and the website
 
 ### Phase 14: Collaboration and production hardening ✅ (co-editing scoped down)
 - [x] Version history: the state before a save is kept, at most one per 5 minutes and the last 50 per score. *File → Version history* (`Ctrl`+`Alt`+`H`) restores one, and `Ctrl`+`Z` undoes the restore
@@ -167,16 +130,206 @@ Grouped by area. **Priority**: P1 = core and expected by every user, P2 = import
   - Live cursors and character-by-character merging (WebSockets plus operation transforms) are **not built**. Shared hosting (XAMPP/PHP) cannot hold WebSocket connections, so this needs a separate realtime service.
 - [x] CI: GitHub Actions runs PHP lint, type-check, unit and API tests, and the build on every push and pull request, and keeps the build as an artifact. A deploy guide is in [DEPLOY.md](DEPLOY.md). *Playwright end-to-end tests are not in CI yet*
 
-### Still open after Phase 14
-| Item | Notes |
-|---|---|
-| Live co-editing (WebSockets, presence, operation transforms) | Needs a realtime service next to PHP |
-| Per-system incremental rendering | Needs a layout cache in `renderer.ts` |
-| Full i18n (command names, status bar, website pages) | Strings are looked up by English text; add rows to `src/ui/i18n.ts` |
-| Playwright end-to-end tests in CI | Browser checks are done by hand today |
-| Embeddable player, PWA/offline install, tablature, percussion, OMR | From section 2 (P3) |
+### Phase 15: Finish the open items ✅
+- [x] **Per-system incremental rendering.** Each system is drawn into its own SVG group and cached with a signature of everything it depends on: its bars and their context, ties, slurs and lines running in or out, verse labels, position and width. An unchanged system is moved into the new SVG as is. Bar widths are cached by bar content, so line breaking no longer re-formats every bar. An edit that keeps the rhythm redraws one system; one that changes a bar's width redraws from there on, because bars move between lines
+- [x] **Full i18n (EN/FR/ES/DE).** Command names (shortcut sheet, command search, toolbar tooltips and menus), command groups, status bar, save status and toolbar tabs. Website: header, footer with a language picker, home, explore, guide headings and contents, and the generated shortcut tables. A test fails when a new command has no translation. *Still English: toast messages and the long guide paragraphs. About, Privacy and Terms say they are English-only*
+- [x] **End-to-end browser tests in CI** (`npm run e2e`): a small DevTools-protocol driver (`scripts/e2e.mjs`) runs headless Chrome against the production build and a throw-away PHP API. Covered: home demo and language switch; guide tables; typing, undo and redo; incremental redraw; command search; German shortcut sheet; sign up → share publicly → a signed-out visitor plays the score → it shows on Explore
+- [x] `app.html?template=<id>` opens a template directly (for links from the website)
+
+### Phase 16: Reach — embed and offline ✅
+- [x] **Embeddable player**: `embed.html?s=<slug>`, a compact responsive page with the score, play/stop with a playhead, and a link to the full viewer. When a score is unlisted or public, the share dialog shows its `<iframe>` code with a copy button. Unknown or private scores show a message
+- [x] **Installable PWA**: web app manifest, icons (including maskable) and shortcuts (new piano score, new lead sheet). The service worker is generated at build time with every built file in its precache list, plus a version from their contents; each new build replaces the old cache
+  - Pages are network-first, so a new version shows as soon as you are online.
+  - Built files are cache-first.
+  - Instrument samples are cached the first time they play.
+  - The API is never cached.
+- [x] **Works offline**: the editor, viewer and website open and work with no network. Cloud saving pauses ("Offline: kept in this browser"), keeps the link to the library copy, and saves automatically when the connection returns
+- [x] **Open files from the desktop**: the installed app registers for `.musicxml`, `.mxl`, `.mid` and `.pianissimo` files (Chromium file handlers)
+- [x] End-to-end tests:
+  - The embed code works inside another page.
+  - An unknown slug shows a message.
+  - With the web server **stopped**, the installed editor reloads and edits, and the website still renders.
+
+### Phase 17: Notation extras ✅
+- [x] **Tremolos**: 1–3 strokes on a note (`Alt`+`Shift`+`R` cycles; also on the Articulations toolbar). Playback repeats the note as 8ths, 16ths or 32nds. MusicXML `<tremolo type="single">` both ways
+- [x] **Multi-measure rests** in printed parts:
+  - Runs of empty bars become one bar with an H-bar and the count.
+  - A rehearsal mark, a tempo change or a line break starts a new run.
+  - Repeats, endings, key/time/clef changes and navigation marks are never folded in.
+  - The full score always shows every bar.
+- [x] **Percussion staff**: a *Drum kit* instrument with a drum clef. Each line or space is a drum: kick, snare, three toms, hi-hat, pedal hi-hat, ride and crash, with x noteheads for cymbals.
+  - The status bar names the drums under the cursor.
+  - It plays a synthesized kit, so it works offline.
+  - MIDI export puts it on channel 10, and MIDI import turns channel 10 into a drum staff.
+  - MusicXML uses `<unpitched>` notes and x noteheads.
+  - Transposing leaves it alone.
+- [x] **Guitar**:
+  - *Tablature* under any staff (`Alt`+`Shift`+`B`, or the *Guitar + tab* instrument). It is worked out from the notes in standard tuning, giving each note of a chord its own string and staying near the previous hand position.
+  - *Chord diagrams* above chord symbols (`Alt`+`Shift`+`D`). Shapes come from a search of the neck, not a fixed table, so any chord symbol gets a playable shape: open shapes first, barre chords otherwise, slash bass lowest.
+- [x] Templates: *Rock band* (guitar riff + drum groove) and *Guitar song* (melody, tab, chords and diagrams)
+
+*Note:* tab and diagrams are display options worked out from the notes, so MusicXML carries the notes and chord symbols and they reappear on import. They are not written as `<technical><fret>` or `<frame>`.
+
+### Phase 18: Live co-editing ✅
+- [x] **Editors**: the owner invites people by their account email (share dialog → *Edit together*).
+  - Editors find the score in their library, marked *shared by …*.
+  - They can open, save, see the history and co-edit. Only the owner deletes it, changes who sees it, or manages editors.
+  - An editor can leave.
+  - API: `GET/POST /scores/{id}/editors`, `DELETE /scores/{id}/editors/{userId}`.
+- [x] **Realtime service** (`realtime/server.mjs`): Node with no dependencies.
+  - WebSocket framing is written on `node:http`.
+  - It accepts one-hour tickets that PHP signs with a shared secret (`POST /scores/{id}/realtime`), so it needs no database access.
+  - One room per open score, at most 20 people. Dead connections are dropped by ping.
+- [x] **Merged edits**:
+  - Typing travels as "replace bar N" edits. Adding or removing bars, or changing parts, sends the whole score.
+  - The service puts every edit in one order. Each client keeps the agreed score plus its own unconfirmed edits and re-applies them on top of what arrives, so all copies end up identical.
+  - Two people on different bars never collide. On the same bar, the edit the service received last wins on every screen.
+  - A bar edit made against bars that someone has just added or removed is refused, and everyone resyncs.
+  - Remote edits are applied to the undo history too, so `Ctrl`+`Z` only takes back your own edits. A layout change by someone else restarts undo, with a message.
+- [x] **Presence**: a *Live* badge with each person's initial, and a coloured cursor with their name on the score
+- [x] **Saving**: the first person in a room (the leader) saves to the library and tells the others which revision they now match. When the leader leaves, the next person takes over and saves anything outstanding. If the connection drops, the editor reconnects with backoff and meanwhile falls back to the normal conflict-safe saving
+- [x] Tests:
+  - Merge rules against a simulated service: concurrent edits, same-bar races, refused edits, personal undo.
+  - API tests for editor permissions and tickets, plus a real WebSocket session through the service.
+  - End-to-end: two browsers editing one score at once.
+- [x] Without the service, hosting is unchanged: conflict-safe saves and polling every 20 s (see [DEPLOY.md](DEPLOY.md), *Live co-editing*)
+
+**The original plan (phases 1–18) is complete.** What remains from section 2 is listed there, with the reason each item is not planned yet.
 
 ---
+
+## 4b. New features (phases 19–23)
+
+Beyond the original plan, built after it was complete.
+
+### Phase 19: Mixer and practice ✅
+- [x] **Mixer** (side panel → *Mixer & practice*): volume, mute and solo per part, and a volume for the chord accompaniment, which goes quiet while a part is soloed. Saved with the score and undoable. Playback and WAV export follow it; MIDI and MusicXML export keep every part
+- [x] **Reverb** amount (saved with the score), on the master output
+- [x] **Practice tempo** slider (50–150 %): playback, the cursor and the metronome all run at that speed, and the written tempo stays as it is. The setting is remembered per browser, not in the score
+- [x] **Swing** (`Ctrl`+`Alt`+`G`): off-beat eighths come a third of a beat late (2:1 feel) in bars counted in quarters or halves (not 6/8). Playback, the cursor, WAV and MIDI export all swing
+- [x] **Wait mode** (`Ctrl`+`Alt`+`W`): practise the part under the cursor with a MIDI keyboard.
+  - The cursor waits on each chord, and the status bar says what to play.
+  - A right chord sounds together with the other parts at that moment; a wrong one says which notes were wanted.
+  - It follows repeats and jumps, skips rests and tied notes, and sums up the wrong tries at the end.
+
+### Phase 20: Sing or play to write ✅
+- [x] **Pitch detection** with the McLeod method (normalised square difference). It is robust to strong overtones, so a sung A3 is not read as A4, and noise is reported as unclear
+- [x] **Note tracking**: a note needs three steady frames to start and ends on silence or a held new pitch. Vibrato and scoops do not split it, and blips under 70 ms are dropped
+- [x] **Record from the microphone** (`Ctrl`+`Alt`+`R`, or 🎤 next to *Rec*).
+  - You get a count-in, then sing or play one line. Only the clicks play, so the speakers are not recorded.
+  - It is quantised like MIDI recording, at concert pitch.
+  - The browser's echo cancellation, noise suppression and automatic gain are turned off, because they bend the pitch.
+- [x] **Tuner** (`Ctrl`+`Alt`+`U`): note name, cents and Hz, with a needle that turns green within 5 cents; also shown while recording
+- [x] End-to-end: Chrome's fake microphone plays a generated, voice-like C5. The tuner reads C5 and the recording writes only C5s
+
+### Phase 21: Writing helpers ✅
+- [x] **Instrument ranges** for every instrument template.
+  - In the editor, notes an instrument cannot play are drawn in red, and the status bar explains: *F3 is too low for Violin (lowest G3)*.
+  - Prints, the viewer and embeds are not coloured.
+  - Ranges are checked at concert pitch, so the transposed view agrees.
+- [x] **Chord suggestions** (`Ctrl`+`Alt`+`K`): the three chords of the key that best hold the bar's melody, weighted by note length and strong beats, with V7 only when the melody has the seventh. Spelled in the key. *Suggest chords for every bar without one* fills a whole melody in one step (undoable)
+- [x] **Left hand from the chord symbols** (`Ctrl`+`Alt`+`L`): writes real, editable notes into the empty bars of the piano's bass staff.
+  - It follows chord changes within a bar.
+  - The pattern comes from the accompaniment style: block chords, bass + chords, broken chords or strummed chords.
+  - It stays in a comfortable left-hand range.
+- [x] **Check the score** (`Ctrl`+`Alt`+`C`): notes out of range, bars that do not add up (in beats), ties to a different pitch, slurs and lines that lost their end note, and parts with no notes. Each line jumps to the place. The print dialog shows *⚠ N things to check* when there are any
+
+### Phase 22: Teaching ✅
+- [x] **Classes** (📚 in the account menu, or `Ctrl`+`Alt`+`J`): anyone can create a class and becomes its teacher. Students join with an 8-character code (no 0/O or 1/I) or a link, `app.html?join=CODE`, which works even before signing in. Teachers see the students; students can leave, teachers can remove them or delete the class
+- [x] **Assignments**: the teacher sets the score being edited as an assignment, with a title, instructions and an optional due date. The assignment stores a copy, so later edits to the teacher's own score do not change it
+- [x] **Students' work**: *Start* gives each student their own copy in their library, and the teacher is made an editor of it.
+  - The teacher can open it, play it, comment on bars and even co-edit it live with the Phase 18 tools.
+  - A banner over the copy shows the instructions, the due date and the status, with *Hand in*.
+- [x] **Review**: for each assignment the teacher sees every student as *not started*, *working*, *handed in* or *returned*. Opening a student's work and *Give back…* with written feedback both work from that list and from the banner. The student sees the feedback on the banner and in the class
+- [x] API: `/classes`, `/classes/join`, `/classes/{id}`, `/classes/{id}/assignments`, `/assignments/{id}/start|submit|submissions`, `/submissions/{id}/return`, `/scores/{id}/assignment`. Students never see the join code or other students' work. Deleting a class leaves students their copies
+- [x] Tests: the API flow end to end; in the browser, a teacher and a student in separate sessions go from creating the class to the student reading the feedback
+
+### Phase 23: Community ✅
+- [x] **Profiles**: `profile.html?u=<id>` with the person's public scores, the date they joined, and the likes they have received. Score pages link to the author
+- [x] **Likes** on shared scores (♥ with a count; signed-in members only), shown on cards and score pages. Explore can sort by *Most liked*
+- [x] **Remix**: copies a shared score into your library and opens it in the editor (`app.html?open=<id>`). If the remix is shared, its page credits the original: *remix of … by …*
+- [x] **Comments** on shared score pages:
+  - Anyone reads them; members post them, at most 10 every 10 minutes.
+  - The comment's author or the score's owner can delete one.
+  - Signed-out visitors see a sign-in hint.
+- [x] **Moderation**: reporting a comment or a score.
+  - Three different people reporting a comment hide it. Three reporting a score take it off Explore and profiles; its link keeps working for the owner.
+  - There is no admin screen yet. Hidden items stay in the database (`hidden = 1`) for review
+- [x] Tests: the API rules (permissions, counts, hiding after reports); in the browser, liking, commenting, the profile, Explore by likes, and remixing into the editor
+
+### Phase 24: Practice without a MIDI keyboard ✅
+- [x] Wait mode picks its input:
+  - a MIDI keyboard if one is connected (asking for MIDI access is capped at 2 s, because some browsers never answer);
+  - otherwise the **microphone**: one line, matched on the melody note in any octave, so a singer's own range counts;
+  - otherwise the **on-screen piano**, which also works in wait mode alongside the others.
+- [x] Through the microphone the app plays nothing back, so it does not hear itself
+- [x] End-to-end: Chrome's fake microphone sings C5 and wait mode steps through three Cs to the end
+
+### Phase 25: Marking and the calendar ✅
+- [x] **Marking criteria** on an assignment (up to 8). Giving work back uses a form, no longer a prompt: feedback, a free-text grade ("8/10", "B+") and a 0–4 mark per criterion, which can be changed later. Students see the grade and marks on the banner and in the class; the teacher sees grades in the work list. The banner's *Give back…* opens that form for the student
+- [x] **Due-date agenda** at the top of the Classes dialog: *Overdue* (not handed in), *This week*, *Later*, across all classes. A teacher sees how many have handed in. *Add to my calendar* downloads an `.ics` file of all-day events for phone and Google calendars
+- [x] API: `rubric` on assignments; `grade` and `marks` on submissions; `GET /calendar`
+
+### Phase 26: Notifications and moderation ✅
+- [x] **Notifications** (🔔 in the editor's header when signed in), for these events:
+  - being invited to edit;
+  - a new assignment;
+  - a student handing in;
+  - work given back;
+  - a comment on your score.
+  - The list refreshes every minute and when the tab comes back; opening an item marks it read and goes there. Nobody is notified of their own actions, and the last 200 are kept.
+- [x] **Email copies**, optional: off unless the server has `mail_from` (`PIANISSIMO_MAIL_FROM`); `site_url` makes the links absolute. Each person can turn emails off in the bell's panel. Sending uses PHP's `mail()` and can never break the request that caused it
+- [x] **Admin screen** (`admin.html`) for accounts listed in `admins` (`PIANISSIMO_ADMINS`): reported comments and scores, most reported first, with *Show again*, *Dismiss reports*, and *Delete comment* or *Make private*. Everyone else is turned away, in the API too
+- [x] `app.html?class=<id>` opens a class (used by notification links)
+
+### Phase 27: Translations ✅
+- [x] **Toast messages** in French, Spanish and German. Templated messages keep their titles, names and numbers. Screen-reader announcements are translated the same way. A test scans the source and fails when a new message has no translation
+- [x] **The guide** is now translated in full (every explanation, the key names such as *Strg*, *Maj*, *Mayús*, and the lyrics table). A test checks that every block has a translation and keeps its links
+
+### Phase 28: Up to four voices per staff ✅
+- [x] **Model**: `voice3` and `voice4` beside `voice2`, so existing scores need no migration. All access goes through the lane helpers (`laneOf`, `lanesOf`, `setLane`, `dropLane`), and copying, refitting, reflowing, parts, extraction and transposition all handle every voice
+- [x] **Editing**: `V` goes 1 → 2 → 3 → 4 → 1, keeping the beat. A voice is created on first use and removed again if left with only rests. *Remove this voice* takes out the cursor's voice, or all extra voices from voice 1. Each voice has its own cursor colour (blue, orange, green, purple), and the status bar and screen reader name it
+- [x] **Drawing**: voices 1 and 3 have stems up, 2 and 4 stems down. Rests move apart, ties curve with their stems, and voices that are only rests are not drawn. A click picks the voice whose stems point to where you clicked
+- [x] **Playback and files**: all voices play; MusicXML exports and imports four voices per staff (stems up and down)
+
+### Phase 29: Closing the list ✅
+- [x] **Scanning sheet music** (`Ctrl`+`Alt`+`O`, *Scan sheet music (photo or PDF)…*):
+  - The page goes to the server, where an OMR engine turns it into MusicXML that opens in the editor. The engine is set with `omr_command`, normally Audiveris.
+  - Uploads are checked by their content (PNG, JPEG, TIFF or PDF, up to 10 MB).
+  - The engine runs with a time limit in a private temporary folder, which is always deleted afterwards.
+  - There is a limit of 20 scans an hour per person, and signing in is required.
+  - Without an engine the command says scanning is not set up.
+  - Tested end to end (API and browser) with a stand-in engine, `scripts/fake-omr.mjs`. *Not yet run against a real Audiveris install.*
+- [x] **Your data**: *Download my data* (everything about the account as one JSON file) and *Delete my account…* (password required). Deletion removes the library, shared scores, classes taught, work in classes, comments, likes, notifications and reports
+- [x] **Legal pages**:
+  - Privacy now describes what the software really stores: the microphone, editing together, classes and grades, the community, email, scanning, and the new download and delete options.
+  - Terms cover remixes, comments, moderation and classes.
+  - About, Privacy and Terms are translated into French, Spanish and German, with a note that the English version is the reference. *These are drafts for the site operator to review* (see section 2).
+  - Tests check every block has a translation and keeps its links.
+- [x] **Email in each person's language**:
+  - Notifications store their kind and details, so emails are written in the language the person uses in the editor; the bell translates them too.
+  - Each person chooses *no emails*, *each one* or *a daily summary*. Summaries are sent by `server/cron/digest.php`, run from cron, which tracks the last notification sent by id so nothing is skipped or sent twice.
+  - `mail_log` writes emails to a file for development and tests.
+- [x] **Crossing voices**: when voice 3 or 4 sounds together with the voice that shares its stem direction (1 or 2), its note moves to the right so stems and heads do not overlap. The cursor and clicks follow the moved note
+
+### Phase 30: Phones and desktop installers ✅
+- [x] **Phones**:
+  - The editor's top bar is one row on phones.
+  - The settings panel slides up as a sheet, and a ⋯ action sheet holds the file, export, recording and help commands.
+  - The on-screen piano shows one octave of wide keys.
+  - Drop-down menus open on tap.
+  - Notches and the home bar are respected.
+  - Every page fits a 320px screen, which an end-to-end test checks.
+- [x] **Image export**: staff lines, stems and barlines were missing from PNG and SVG exports, because they inherit their colour from the `<svg>` element, which the export dropped. There is now a unit test for it.
+- [x] **Installers** (`npm run package`, [INSTALL.md](INSTALL.md)), with no new dependencies:
+  - A Windows setup that installs per user without admin rights. It adds shortcuts, an Apps & features entry and "Open with" for score files.
+  - A portable Windows zip.
+  - A macOS/Linux package with an install script.
+  - On every system, a small launcher serves the app on `127.0.0.1` and opens it in its own window.
+  - An online server can be connected for sign-in and sharing.
+  - The Windows install and uninstall were tested silently. *The macOS/Linux install scripts have not yet been run on those systems.*
+
+**Phases 1–30 are complete.** Section 2 lists what is still open.
 
 ## 5. How a phase is built
 

@@ -54,7 +54,11 @@ final class Auth
         $st = $this->db->prepare('SELECT id, email, name FROM users WHERE id = ?');
         $st->execute([$id]);
         $u = $st->fetch();
-        return $u ? ['id' => (int) $u['id'], 'email' => $u['email'], 'name' => $u['name']] : null;
+        if (!$u) {
+            return null;
+        }
+        $admin = in_array(strtolower($u['email']), $this->config['admins'] ?? [], true);
+        return ['id' => (int) $u['id'], 'email' => $u['email'], 'name' => $u['name']] + ($admin ? ['admin' => true] : []);
     }
 
     public function requireUser(): array

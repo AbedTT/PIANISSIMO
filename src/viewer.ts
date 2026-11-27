@@ -1,5 +1,5 @@
 import { Player } from './audio/player';
-import { api } from './cloud/api';
+import { api, ApiError, type PublicComment, type PublicScore, type User } from './cloud/api';
 import { fromMusicXML, toMusicXML } from './io/musicxml';
 import { readMxl } from './io/mxl';
 import type { Score } from './model/types';
@@ -125,12 +125,121 @@ window.addEventListener('resize', () => {
   resize = window.setTimeout(draw, 150);
 });
 
+// ------------------------------------------------------------------ likes, remixes, comments
+let me: User | null = null;
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const needSignIn = () => {
+  $('vCommentHint').hidden = false;
+  $('vCommentHint').scrollIntoView({ block: 'nearest' });
+};
+
+function showSocial(s: PublicScore, slug: string) {
+  $('socialBar').hidden = false;
+  const author = $<HTMLAnchorElement>('vAuthor');
+  author.textContent = `by ${s.author}`;
+  author.href = `profile.html?u=${s.author_id}`;
+  $('vRemixOf').innerHTML = s.remix_of
+    ? `· remix of <a href="view.html?s=${encodeURIComponent(s.remix_of.slug)}">${esc(s.remix_of.title)}</a> by ${esc(s.remix_of.author)}`
+    : '';
+  const like = $('vLike');
+  const paint = (liked: boolean, n: number) => {
+    like.firstChild!.textContent = liked ? '♥ ' : '♡ ';
+    $('vLikes').textContent = String(n);
+    like.setAttribute('aria-pressed', String(liked));
+    like.classList.toggle('on', liked);
+  };
+  paint(!!s.liked, s.likes);
+  like.onclick = async () => {
+    if (!me) return needSignIn();
+    try {
+      const r = await api.like(slug);
+      paint(r.liked, r.likes);
+    } catch (err) {
+      message((err as Error).message);
+    }
+  };
+  $('vRemix').onclick = async () => {
+    if (!me) return needSignIn();
+    try {
+      const { score } = await api.remix(slug);
+      location.href = `app.html?open=${score.id}`;
+    } catch (err) {
+      message((err as Error).message);
+    }
+  };
+  $('vReport').onclick = async () => {
+    if (!me) return needSignIn();
+    if (!confirm('Report this score as inappropriate? After a few reports it is taken off Explore.')) return;
+    await api.reportScore(slug).catch(() => {});
+    $('vReport').textContent = '⚑ Reported';
+    $<HTMLButtonElement>('vReport').disabled = true;
+  };
+  void loadComments(slug);
+}
+
+function renderComments(slug: string, list: PublicComment[]) {
+  $('vCommentList').innerHTML =
+    list
+      .map(
+        (c) => `<li data-id="${c.id}"><div class="comment-head"><a href="profile.html?u=${c.author.id}"><b>${esc(c.author.name)}</b></a>
+          <span class="hint">${new Date(c.created_at).toLocaleDateString()}</span>
+          ${c.can_delete ? '<button class="link-btn" data-act="del">Delete</button>' : me ? '<button class="link-btn report" data-act="report">Report</button>' : ''}</div>
+          <p>${esc(c.text)}</p></li>`,
+      )
+      .join('') || '<li class="hint">No comments yet.</li>';
+  $('vCommentList').querySelectorAll<HTMLElement>('li[data-id]').forEach((li) => {
+    const id = Number(li.dataset.id);
+    li.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
+      if (!confirm('Delete this comment?')) return;
+      await api.deleteComment(id).catch(() => {});
+      void loadComments(slug);
+    });
+    li.querySelector('[data-act="report"]')?.addEventListener('click', async (e) => {
+      await api.reportComment(id).catch(() => {});
+      (e.target as HTMLButtonElement).textContent = 'Reported';
+      (e.target as HTMLButtonElement).disabled = true;
+    });
+  });
+}
+
+async function loadComments(slug: string) {
+  $('vComments').hidden = false;
+  $('vCommentForm').hidden = !me;
+  $('vCommentHint').hidden = !!me;
+  try {
+    renderComments(slug, (await api.comments(slug)).comments);
+  } catch {
+    $('vCommentList').innerHTML = '<li class="hint">Comments could not be loaded.</li>';
+  }
+  const form = $<HTMLFormElement>('vCommentForm');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const box = form.elements.namedItem('text') as HTMLTextAreaElement;
+    try {
+      renderComments(slug, (await api.addComment(slug, box.value)).comments);
+      box.value = '';
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) needSignIn();
+      else alert((err as Error).message);
+    }
+  };
+}
+
 // ------------------------------------------------------------------ boot
 const slug = new URLSearchParams(location.search).get('s');
 if (slug) {
+  // who is looking (for likes and comments); the page works signed out too
+  const who = api.me().then(
+    (r) => (me = r.user),
+    () => null,
+  );
   api
     .publicScore(slug)
-    .then(({ score: s }) => show(s.data, `shared by ${s.author}`))
+    .then(async ({ score: s }) => {
+      show(s.data!, `shared by ${s.author}`);
+      await who;
+      showSocial(s, slug);
+    })
     .catch((err) =>
       message(
         err.status === 404

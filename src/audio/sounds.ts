@@ -11,7 +11,7 @@ export interface SoundDef {
   program: number;
   /** FluidR3 folder name (without -mp3) for sampled sounds. */
   gm?: string;
-  synth?: 'epiano' | 'pad' | 'chip' | 'bells';
+  synth?: 'epiano' | 'pad' | 'chip' | 'bells' | 'drums';
 }
 
 export const DEFAULT_SOUND = 'piano';
@@ -61,7 +61,12 @@ export const SOUNDS: SoundDef[] = [
   { id: 'synth_pad', name: 'Warm pad (offline)', group: 'Synths (no download)', program: 89, synth: 'pad' },
   { id: 'synth_chip', name: '8-bit chip (offline)', group: 'Synths (no download)', program: 80, synth: 'chip' },
   { id: 'synth_bells', name: 'FM bells (offline)', group: 'Synths (no download)', program: 14, synth: 'bells' },
+
+  // for percussion staves: plays General MIDI drum keys (see model/drums.ts)
+  { id: 'drums', name: 'Drum kit (offline)', group: 'Drums', program: 0, synth: 'drums' },
 ];
+
+export const isDrumSound = (id: string | undefined) => id === 'drums';
 
 export const soundById = (id: string | undefined): SoundDef =>
   SOUNDS.find((s) => s.id === id) ?? SOUNDS[0];

@@ -15,7 +15,8 @@ export interface Pitch {
 export type DurationType = 'w' | 'h' | 'q' | '8' | '16' | '32' | '64';
 export const DURATION_TYPES: DurationType[] = ['w', 'h', 'q', '8', '16', '32', '64'];
 
-export type Clef = 'treble' | 'bass' | 'alto';
+/** `percussion`: a drum staff; each line/space is a drum sound (see model/drums.ts). */
+export type Clef = 'treble' | 'bass' | 'alto' | 'percussion';
 
 export type Articulation = 'staccato' | 'accent' | 'tenuto' | 'marcato' | 'fermata';
 export type Dynamic = 'ppp' | 'pp' | 'p' | 'mp' | 'mf' | 'f' | 'ff' | 'fff' | 'sfz';
@@ -46,6 +47,8 @@ export interface NoteEvent {
   spans?: Span[];
   /** Grace notes played just before this note (acciaccature, slashed). */
   graces?: Grace[];
+  /** Single-note tremolo: 1–3 strokes through the stem (repeated 8ths, 16ths or 32nds). */
+  tremolo?: number;
 }
 
 export type SpanKind = 'cresc' | 'dim' | 'pedal' | '8va' | '8vb';
@@ -75,13 +78,21 @@ export interface StaffDef {
   clef: Clef;
   /** Playback sound id (see audio/sounds.ts); defaults to the concert piano. */
   sound?: string;
+  /** Show guitar tablature under this staff (worked out from the notes, standard tuning). */
+  tab?: boolean;
+  /** Mixer (set for every staff of a part): volume 0–1.5 (1 = as written), mute, solo. */
+  volume?: number;
+  mute?: boolean;
+  solo?: boolean;
 }
 
 export interface Measure {
   /** Voice 1: one event list per staff. */
   staves: NoteEvent[][];
-  /** Voice 2 per staff (null/missing = this staff has no second voice in this bar). */
+  /** Voices 2–4 per staff (null/missing = this staff has no such voice in this bar). */
   voice2?: (NoteEvent[] | null)[];
+  voice3?: (NoteEvent[] | null)[];
+  voice4?: (NoteEvent[] | null)[];
   repeatStart?: boolean;
   repeatEnd?: boolean;
   /** First/second ending: this bar is played only on that pass through the repeat. */
@@ -160,6 +171,8 @@ export interface Accompaniment {
   style: AccompanimentStyle;
   /** Sound id (audio/sounds.ts). */
   sound: string;
+  /** Mixer volume 0–1.5 (1 = default). */
+  volume?: number;
 }
 
 export interface Score {
@@ -182,6 +195,12 @@ export interface Score {
   partName?: string;
   accompaniment?: Accompaniment;
   print?: PrintSettings;
+  /** Draw guitar chord diagrams above the chord symbols. */
+  chordDiagrams?: boolean;
+  /** Room reverb on playback, 0 (dry) – 1. */
+  reverb?: number;
+  /** Swing the eighth notes (the off-beat eighth comes late, as in a triplet feel). */
+  swing?: boolean;
 }
 
 export const isRest = (e: NoteEvent) => e.pitches.length === 0;

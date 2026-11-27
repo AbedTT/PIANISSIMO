@@ -83,6 +83,132 @@ final class Db
             // column already exists
         }
 
+        // community (Phase 23): remixes and hidden-after-reports flags
+        foreach (['ALTER TABLE scores ADD COLUMN remix_of INTEGER NULL', 'ALTER TABLE scores ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0'] as $alter) {
+            try {
+                $pdo->exec($alter);
+            } catch (\PDOException) {
+                // column already exists
+            }
+        }
+        $pdo->exec("CREATE TABLE IF NOT EXISTS score_likes (
+            score_id $fk NOT NULL,
+            user_id $fk NOT NULL,
+            created_at {$str(25)} NOT NULL,
+            PRIMARY KEY (score_id, user_id),
+            FOREIGN KEY (score_id) REFERENCES scores(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )$engine");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS public_comments (
+            id $id,
+            score_id $fk NOT NULL,
+            user_id $fk NOT NULL,
+            text $text NOT NULL,
+            hidden INTEGER NOT NULL DEFAULT 0,
+            created_at {$str(25)} NOT NULL,
+            FOREIGN KEY (score_id) REFERENCES scores(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )$engine");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS reports (
+            kind {$str(10)} NOT NULL,
+            target_id $fk NOT NULL,
+            user_id $fk NOT NULL,
+            created_at {$str(25)} NOT NULL,
+            PRIMARY KEY (kind, target_id, user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )$engine");
+
+        // people the owner invited to edit a score with them
+        $pdo->exec("CREATE TABLE IF NOT EXISTS score_editors (
+            score_id $fk NOT NULL,
+            user_id $fk NOT NULL,
+            created_at {$str(25)} NOT NULL,
+            PRIMARY KEY (score_id, user_id),
+            FOREIGN KEY (score_id) REFERENCES scores(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )$engine");
+
+        // teaching: classes, their students, assignments and the students' work
+        $pdo->exec("CREATE TABLE IF NOT EXISTS classes (
+            id $id,
+            owner_id $fk NOT NULL,
+            name {$str(80)} NOT NULL,
+            join_code {$str(12)} NOT NULL UNIQUE,
+            created_at {$str(25)} NOT NULL,
+            FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+        )$engine");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS class_members (
+            class_id $fk NOT NULL,
+            user_id $fk NOT NULL,
+            joined_at {$str(25)} NOT NULL,
+            PRIMARY KEY (class_id, user_id),
+            FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )$engine");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS assignments (
+            id $id,
+            class_id $fk NOT NULL,
+            title {$str(120)} NOT NULL,
+            instructions $text NOT NULL,
+            data $text NOT NULL,
+            due_at {$str(25)} NULL,
+            created_at {$str(25)} NOT NULL,
+            FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE
+        )$engine");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS submissions (
+            id $id,
+            assignment_id $fk NOT NULL,
+            user_id $fk NOT NULL,
+            score_id $fk NOT NULL,
+            status {$str(12)} NOT NULL DEFAULT 'working',
+            feedback $text NULL,
+            submitted_at {$str(25)} NULL,
+            returned_at {$str(25)} NULL,
+            UNIQUE (assignment_id, user_id),
+            FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (score_id) REFERENCES scores(id) ON DELETE CASCADE
+        )$engine");
+
+        // notifications (Phase 26)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (
+            id $id,
+            user_id $fk NOT NULL,
+            kind {$str(20)} NOT NULL,
+            text {$str(300)} NOT NULL,
+            link {$str(300)} NOT NULL,
+            created_at {$str(25)} NOT NULL,
+            read_at {$str(25)} NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )$engine");
+        foreach ([
+            'ALTER TABLE users ADD COLUMN notify_email INTEGER NOT NULL DEFAULT 1',
+            // email language and daily digests
+            "ALTER TABLE users ADD COLUMN lang VARCHAR(5) NOT NULL DEFAULT 'en'",
+            // the last notification a daily digest included (ids, not times: no gaps or repeats)
+            'ALTER TABLE users ADD COLUMN digest_last_id INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE notifications ADD COLUMN params TEXT NULL',
+        ] as $alter) {
+            try {
+                $pdo->exec($alter);
+            } catch (\PDOException) {
+                // column already exists
+            }
+        }
+
+        // marking (Phase 25): criteria on assignments, grades and marks on submissions
+        foreach ([
+            'ALTER TABLE assignments ADD COLUMN rubric TEXT NULL',
+            'ALTER TABLE submissions ADD COLUMN grade VARCHAR(20) NULL',
+            'ALTER TABLE submissions ADD COLUMN marks TEXT NULL',
+        ] as $alter) {
+            try {
+                $pdo->exec($alter);
+            } catch (\PDOException) {
+                // column already exists
+            }
+        }
+
         $pdo->exec("CREATE TABLE IF NOT EXISTS auth_attempts (
             id $id,
             ip {$str(45)} NOT NULL,
@@ -96,6 +222,12 @@ final class Db
             'CREATE INDEX idx_scores_public ON scores(visibility, updated_at)',
             'CREATE INDEX idx_attempts ON auth_attempts(ip, action, created_at)',
             'CREATE INDEX idx_versions_score ON score_versions(score_id, created_at)',
+            'CREATE INDEX idx_editors_user ON score_editors(user_id)',
+            'CREATE INDEX idx_members_user ON class_members(user_id)',
+            'CREATE INDEX idx_comments_score ON public_comments(score_id)',
+            'CREATE INDEX idx_notifications_user ON notifications(user_id, id)',
+            'CREATE INDEX idx_comments_user ON public_comments(user_id, created_at)',
+            'CREATE INDEX idx_submissions_score ON submissions(score_id)',
         ] as $sql) {
             try {
                 $pdo->exec($driver === 'sqlite' ? str_replace('CREATE INDEX', 'CREATE INDEX IF NOT EXISTS', $sql) : $sql);

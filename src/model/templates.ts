@@ -133,6 +133,39 @@ export const TEMPLATES: Template[] = [
     },
   },
   {
+    id: 'rock',
+    name: 'Rock band',
+    description: 'Drum kit groove under a guitar riff with chords.',
+    icon: '🥁',
+    make: () => {
+      const s = scoreFromInstruments(['guitar', 'drums'], { title: 'Rock groove', tempo: 112, measures: 1 }, newScore);
+      const riff = 'E3:8 E3:8 G3:8 A3:8 E3:8 E3:8 D3:8 E3:8';
+      writeStream(s, 0, parseMelody([riff, riff, riff, 'E3:8 E3:8 G3:8 A3:8 B3:q A3:8 G3:8'].join(' | ')));
+      chordsPerBar(s, 0, 'Em Em G D');
+      // hi-hat eighths over kick (beats 1 and 3) and snare (beats 2 and 4)
+      const beat = 'G5+F4:8 G5:8 G5+C5:8 G5:8 G5+F4:8 G5+F4:8 G5+C5:8 G5:8';
+      writeStream(s, 1, parseMelody([beat, beat, beat, 'G5+F4:8 G5:8 G5+C5:8 G5:8 C5:16 C5:16 E5:16 E5:16 A4:8 A5+F4:8'].join(' | ')));
+      s.transposedView = true; // the guitar as guitarists read it (an octave above the sound)
+      return s;
+    },
+  },
+  {
+    id: 'guitar-song',
+    name: 'Guitar song',
+    description: 'Melody with tablature, chord symbols and chord diagrams.',
+    icon: '🎸',
+    make: () => {
+      const s = scoreFromInstruments(['guitar_tab'], { title: 'Campfire song', tempo: 92, keyFifths: 1, measures: 1 }, newScore);
+      // concert pitch (a guitar sounds an octave below its written notes)
+      writeStream(s, 0, parseMelody('G3:q B3:q D4:q B3:q | C4:q E4:q G4:h | D4:q F#4:q A4:q F#4:q | G4:w'));
+      chordsPerBar(s, 0, 'G C D7 G');
+      s.chordDiagrams = true;
+      s.transposedView = true;
+      s.accompaniment = { enabled: true, style: 'strum', sound: 'guitar_steel' };
+      return s;
+    },
+  },
+  {
     id: 'quartet',
     name: 'String quartet',
     description: 'Two violins, viola and cello, eight empty bars.',

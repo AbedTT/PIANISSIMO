@@ -50,6 +50,17 @@ export interface AppActions {
   togglePianoKeys(): void;
   toggleTheme(): void;
   startTutorial(): void;
+  toggleWaitMode(): void;
+  toggleMicRecording(): void;
+  suggestChords(): void;
+  harmoniseAll(): void;
+  fillLeftHand(): void;
+  showChecks(): void;
+  openClasses(): void;
+  scanMusic(): void;
+  toggleTuner(): void;
+  /** Wait mode is running. */
+  readonly practising: boolean;
 }
 
 const STEPS: Step[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -98,19 +109,19 @@ export const COMMANDS: Command[] = [
   { id: 'rest', label: 'Write rest', group: 'Notes', keys: ['Digit0', 'Numpad0'], icon: '𝄽', run: (ed) => ed.rest() },
   {
     id: 'voice',
-    label: 'Switch voice 1 / voice 2 (two melodic lines on one staff)',
+    label: 'Next voice: 1 → 2 → 3 → 4 (up to four lines on one staff)',
     group: 'Notes',
     keys: ['KeyV'],
-    icon: '<span class="text-icon voice-icon">V2</span>',
+    icon: '<span class="text-icon voice-icon">V</span>',
     run: (ed, app) => {
       ed.toggleVoice();
-      app.notify(ed.voice ? 'Voice 2 (stems down): type the second line' : 'Voice 1');
+      app.notify(ed.voice ? `Voice ${ed.voice + 1} (stems ${ed.voice % 2 ? 'down' : 'up'})` : 'Voice 1');
     },
-    active: (ed) => ed.voice === 1,
+    active: (ed) => ed.voice > 0,
   },
   {
     id: 'removeVoice2',
-    label: 'Remove voice 2 from this bar (or selected bars)',
+    label: 'Remove this voice from the bar (from voice 1: voices 2–4)',
     group: 'Notes',
     keys: ['Ctrl+Shift+KeyV'],
     run: (ed) => ed.removeVoice2(),
@@ -360,6 +371,112 @@ export const COMMANDS: Command[] = [
     group: 'Score',
     keys: ['Alt+KeyI'],
     run: (_, app) => app.showInstruments(),
+  },
+  {
+    id: 'suggestChords',
+    label: 'Suggest chords for this bar',
+    group: 'Text',
+    keys: ['Ctrl+Alt+KeyK'],
+    run: (_ed, app) => app.suggestChords(),
+  },
+  {
+    id: 'harmoniseAll',
+    label: 'Suggest chords for every bar without one',
+    group: 'Text',
+    run: (_ed, app) => app.harmoniseAll(),
+  },
+  {
+    id: 'fillLeftHand',
+    label: 'Write a left-hand part from the chord symbols',
+    group: 'Score',
+    keys: ['Ctrl+Alt+KeyL'],
+    run: (_ed, app) => app.fillLeftHand(),
+  },
+  {
+    id: 'scanMusic',
+    label: 'Scan sheet music (photo or PDF)…',
+    group: 'File',
+    keys: ['Ctrl+Alt+KeyO'],
+    run: (_ed, app) => app.scanMusic(),
+  },
+  {
+    id: 'classes',
+    label: 'Classes and assignments',
+    group: 'File',
+    keys: ['Ctrl+Alt+KeyJ'],
+    icon: '📚',
+    run: (_ed, app) => app.openClasses(),
+  },
+  {
+    id: 'checkScore',
+    label: 'Check the score (range, bar lengths, ties…)',
+    group: 'Review',
+    keys: ['Ctrl+Alt+KeyC'],
+    run: (_ed, app) => app.showChecks(),
+  },
+  {
+    id: 'recordMic',
+    label: 'Sing or play into the microphone (count-in, then one line)',
+    group: 'File',
+    keys: ['Ctrl+Alt+KeyR'],
+    icon: '🎤',
+    run: (_ed, app) => app.toggleMicRecording(),
+  },
+  {
+    id: 'tuner',
+    label: 'Tuner (microphone)',
+    group: 'Playback',
+    keys: ['Ctrl+Alt+KeyU'],
+    run: (_ed, app) => app.toggleTuner(),
+  },
+  {
+    id: 'practiceWait',
+    label: 'Wait mode: practise this part (MIDI keyboard, microphone or on-screen piano)',
+    group: 'Playback',
+    keys: ['Ctrl+Alt+KeyW'],
+    run: (_ed, app) => app.toggleWaitMode(),
+  },
+  {
+    id: 'swing',
+    label: 'Swing the eighth notes on/off',
+    group: 'Playback',
+    keys: ['Ctrl+Alt+KeyG'],
+    run: (ed, app) => {
+      ed.mutate((s) => {
+        if (s.swing) delete s.swing;
+        else s.swing = true;
+      });
+      app.notify(ed.score.swing ? 'Swing on: off-beat eighths come late' : 'Straight eighths');
+    },
+    active: (ed) => !!ed.score.swing,
+  },
+  {
+    id: 'tremolo',
+    label: 'Tremolo (1, 2, 3 strokes, then off)',
+    group: 'Articulations',
+    keys: ['Alt+Shift+KeyR'],
+    icon: '⫽',
+    run: (ed, app) => {
+      const n = ed.cycleTremolo();
+      app.notify(n ? `Tremolo: ${n} stroke${n > 1 ? 's' : ''}` : 'Tremolo off');
+    },
+    active: (ed) => !!ed.current?.tremolo,
+  },
+  {
+    id: 'tab',
+    label: 'Guitar tablature under this staff',
+    group: 'Score',
+    keys: ['Alt+Shift+KeyB'],
+    run: (ed, app) => app.notify(ed.toggleTab() ? 'Tablature shown under this staff (standard tuning)' : 'Tablature hidden'),
+    active: (ed) => !!ed.score.staves[ed.cursor.s]?.tab,
+  },
+  {
+    id: 'chordDiagrams',
+    label: 'Guitar chord diagrams above chord symbols',
+    group: 'Score',
+    keys: ['Alt+Shift+KeyD'],
+    run: (ed, app) => app.notify(ed.toggleChordDiagrams() ? 'Chord diagrams on' : 'Chord diagrams off'),
+    active: (ed) => !!ed.score.chordDiagrams,
   },
   {
     id: 'transposedView',

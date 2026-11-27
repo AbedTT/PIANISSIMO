@@ -5,37 +5,55 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Privacy · Pianissimo</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   </head>
   <body data-page="privacy">
     <main class="wrap">
       <div class="page-head">
-        <h1>Privacy policy</h1>
-        <p>Plain-language summary of what Pianissimo stores and why.</p>
+        <h1 data-i18n="pv.title">Privacy policy</h1>
+        <p data-i18n="pv.lead">Plain-language summary of what Pianissimo stores and why.</p>
       </div>
       <article class="prose" style="padding-top: 24px">
-        <h2>Without an account</h2>
-        <p>The editor works entirely in your browser. The score you are editing is saved in your browser's local storage on your own device. It is not sent to us.</p>
-        <p>Instrument sounds are downloaded from public sample libraries the first time you use them (GitHub Pages hosts the Salamander piano and FluidR3 soundfont files). Like any website, those hosts can see your IP address when your browser requests the files.</p>
+        <h2 data-i18n="pv.h.local">Without an account</h2>
+        <p data-i18n="pv.local">The editor works entirely in your browser. The score you are editing, your language, theme and practice tempo are kept in your browser's local storage on your own device, and the app itself is cached so it opens offline. None of this is sent to us.</p>
+        <p data-i18n="pv.sounds">Instrument sounds are downloaded from public sample libraries the first time you use them (GitHub Pages hosts the Salamander piano and FluidR3 soundfont files). Like any website, those hosts can see your IP address when your browser requests the files.</p>
+        <p data-i18n="pv.mic">If you use the microphone (tuner, recording by singing or playing, wait mode), the sound is analysed in your browser to find the notes. Audio is never uploaded or saved; only the notes it turns into become part of your score.</p>
 
-        <h2>With an account</h2>
-        <p>If you create an account we store:</p>
-        <ul>
+        <h2 data-i18n="pv.h.account">With an account</h2>
+        <p data-i18n="pv.account.lead">If you create an account we store:</p>
+        <ul data-i18n="pv.account">
           <li>your name and email address, to identify you and let you sign in;</li>
           <li>your password, only as a one-way hash (we can never read it);</li>
-          <li>the scores you save to your library, with their title and sharing setting;</li>
+          <li>the scores you save to your library, with their title, sharing setting and up to 50 earlier versions;</li>
+          <li>your notification settings and your recent notifications (the last 200);</li>
           <li>a short record of sign-in attempts per IP address, to slow down password guessing (kept for about an hour).</li>
         </ul>
 
-        <h2>Sharing</h2>
-        <p>Scores are <b>private</b> by default. If you make a score <b>unlisted</b>, anyone with its link can view and play it. If you make it <b>public</b>, it is also listed on the Explore page with your display name. You can make it private again at any time.</p>
+        <h2 data-i18n="pv.h.together">Editing together</h2>
+        <p data-i18n="pv.together">People you invite to a score can open and edit it, and see your name. While you edit together live, your name and where your cursor is are passed to the others through the site's live-editing service; they are not stored there.</p>
 
-        <h2>Cookies</h2>
-        <p>We use a single session cookie to keep you signed in. We do not use advertising or tracking cookies, or third-party analytics.</p>
+        <h2 data-i18n="pv.h.classes">Classes</h2>
+        <p data-i18n="pv.classes">When you join a class, its teacher sees your name and email address. When you start an assignment, your copy is in your library and the teacher can open, comment on and edit it. Your status, the teacher's feedback, grade and marks are stored with the class. If the teacher deletes the class, those records go; your copy of the work stays in your library.</p>
 
-        <h2>Your rights</h2>
-        <p>You can delete any score from your library at any time. To delete your account and all its data, contact the site operator.</p>
+        <h2 data-i18n="pv.h.sharing">Sharing and the community</h2>
+        <p data-i18n="pv.sharing">Scores are <b>private</b> by default. If you make a score <b>unlisted</b>, anyone with its link can view and play it. If you make it <b>public</b>, it is also listed on Explore and on your public profile with your display name. You can make it private again at any time. Comments you write on shared scores are public, with your name. Likes are counted; who liked a score is not shown. If you report something, only the site's admins can see that you did.</p>
 
-        <p class="callout">This page describes how the Pianissimo software works. Whoever runs a Pianissimo site should review it and add their contact details and any legal requirements that apply to them.</p>
+        <h2 data-i18n="pv.h.email">Email</h2>
+        <p data-i18n="pv.email">We email you only if the site has email turned on, and only copies of your notifications (one per event, or one daily summary, as you choose). You can turn emails off in the 🔔 panel of the editor.</p>
+
+        <h2 data-i18n="pv.h.scan">Scanning sheet music</h2>
+        <p data-i18n="pv.scan">If you scan a page of music, the image or PDF is sent to the site's server, turned into notes there, and deleted straight away. Only the resulting score is opened in your editor.</p>
+
+        <h2 data-i18n="pv.h.cookies">Cookies</h2>
+        <p data-i18n="pv.cookies">We use a single session cookie to keep you signed in. We do not use advertising or tracking cookies, or third-party analytics.</p>
+
+        <h2 data-i18n="pv.h.rights">Your rights</h2>
+        <p data-i18n="pv.rights">In the editor's account menu you can <b>download your data</b> (everything above, as one file) and <b>delete your account</b>. Deleting removes your library, shared scores, classes you teach, your work in classes, comments, likes and notifications for good. You can also delete single scores at any time.</p>
+
+        <p class="callout" data-i18n="pv.operator">This page describes how the Pianissimo software works. Whoever runs a Pianissimo site should review it and add their contact details and any legal requirements that apply to them.</p>
       </article>
     </main>
     <script type="module" src="/src/site/site.ts"></script>

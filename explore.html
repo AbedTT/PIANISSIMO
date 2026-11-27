@@ -6,16 +6,23 @@
     <title>Explore scores · Pianissimo</title>
     <meta name="description" content="Browse sheet music shared publicly by Pianissimo users. Open any score to see and hear it." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>𝄞</text></svg>" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   </head>
   <body data-page="explore">
     <main class="wrap">
       <div class="page-head">
-        <h1>Explore scores</h1>
-        <p>Sheet music people have shared publicly. Open one to see it, hear it, or copy it into your own editor.</p>
+        <h1 data-i18n="explore.h1">Explore scores</h1>
+        <p data-i18n="explore.lead">Sheet music people have shared publicly. Open one to see it, hear it, or copy it into your own editor.</p>
       </div>
       <section class="block" style="padding-top: 28px">
-        <input id="exploreSearch" class="search" type="search" placeholder="Search by title or composer…" aria-label="Search scores" />
-        <div class="gallery" id="exploreGallery"><div class="empty">Loading…</div></div>
+<div class="explore-tools">
+<input id="exploreSearch" class="search" type="search" placeholder="Search by title or composer…" aria-label="Search scores" data-i18n-placeholder="gallery.search" />
+<select id="exploreSort" aria-label="Sort"><option value="new" data-i18n="explore.newest">Newest</option><option value="likes" data-i18n="explore.liked">Most liked</option></select>
+</div>
+        <div class="gallery" id="exploreGallery"><div class="empty" data-i18n="gallery.loading">Loading…</div></div>
       </section>
     </main>
     <script type="module" src="/src/site/site.ts"></script>

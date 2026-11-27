@@ -47,9 +47,24 @@ export function newScore(opts: Partial<Pick<Score, 'title' | 'composer' | 'tempo
 
 // ---------- voices ("lanes" = staff + voice) ----------
 
-/** Event list of a staff's voice in a bar, or undefined when voice 2 does not exist there. */
+/** Up to four voices per staff: voice 1 in `staves`, voices 2–4 in their own fields. */
+export const MAX_VOICES = 4;
+export const EXTRA_VOICES = ['voice2', 'voice3', 'voice4'] as const;
+export type ExtraVoice = (typeof EXTRA_VOICES)[number];
+/** The bar field holding voice `v` (1 = voice 2 … 3 = voice 4). */
+export const voiceField = (v: number): ExtraVoice => EXTRA_VOICES[v - 1];
+
+/** Event list of a staff's voice in a bar, or undefined when that voice does not exist there. */
 export function laneOf(measure: Measure, s: number, v = 0): NoteEvent[] | undefined {
-  return v ? measure.voice2?.[s] ?? undefined : measure.staves[s];
+  return v ? measure[voiceField(v)]?.[s] ?? undefined : measure.staves[s];
+}
+
+/** Remove voice `v` (2–4) of staff `s` from a bar, dropping empty voice fields. */
+export function dropLane(measure: Measure, s: number, v: number) {
+  const f = voiceField(v);
+  const list = measure[f];
+  if (list?.[s]) list[s] = null;
+  if (list?.every((l) => !l)) delete measure[f];
 }
 
 /** Same as laneOf, but an empty list instead of undefined (for reading). */
@@ -63,9 +78,10 @@ export function setLane(measure: Measure, s: number, v: number, events: NoteEven
     measure.staves[s] = events;
     return;
   }
-  measure.voice2 ??= [];
-  while (measure.voice2.length <= s) measure.voice2.push(null);
-  measure.voice2[s] = events;
+  const f = voiceField(v);
+  const list = (measure[f] ??= []);
+  while (list.length <= s) list.push(null);
+  list[s] = events;
 }
 
 /** The lane, created as a bar of rests when voice 2 does not exist yet (call inside a mutation). */
@@ -79,11 +95,13 @@ export function ensureLane(score: Score, m: number, s: number, v = 0): NoteEvent
   return events;
 }
 
-/** Lanes that exist in a bar for one staff: voice 1, and voice 2 if present. */
+/** Lanes that exist in a bar for one staff: voice 1, then voices 2–4 where present. */
 export function lanesOf(measure: Measure, s: number): { v: number; events: NoteEvent[] }[] {
   const out = [{ v: 0, events: measure.staves[s] }];
-  const v2 = measure.voice2?.[s];
-  if (v2) out.push({ v: 1, events: v2 });
+  for (let v = 1; v < MAX_VOICES; v++) {
+    const events = measure[voiceField(v)]?.[s];
+    if (events) out.push({ v, events });
+  }
   return out;
 }
 
@@ -94,7 +112,7 @@ export function eventAt(score: Score, p: { m: number; s: number; i: number; v?: 
 
 /** Every event of the score, all staves and voices. */
 export function allEvents(score: Score): NoteEvent[] {
-  return score.measures.flatMap((m) => [...m.staves.flat(), ...(m.voice2 ?? []).flatMap((l) => l ?? [])]);
+  return score.measures.flatMap((m) => [...m.staves.flat(), ...EXTRA_VOICES.flatMap((f) => (m[f] ?? []).flatMap((l) => l ?? []))]);
 }
 
 export const eventTicks = (e: Pick<NoteEvent, 'type' | 'dots' | 'tuplet'>) => ticksOf(e.type, e.dots, e.tuplet);
@@ -276,7 +294,9 @@ export function refitMeasures(score: Score) {
     // bars that already fit are left untouched (keeps ids, ties and rest spelling)
     const fits = (l: NoteEvent[]) => l.reduce((a, e) => a + eventTicks(e), 0) === bar;
     measure.staves = measure.staves.map((l) => (fits(l) ? l : fit(l)));
-    if (measure.voice2) measure.voice2 = measure.voice2.map((l) => (l ? (fits(l) ? l : fit(l)) : null));
+    for (const f of EXTRA_VOICES) {
+      if (measure[f]) measure[f] = measure[f]!.map((l) => (l ? (fits(l) ? l : fit(l)) : null));
+    }
   });
 }
 
@@ -286,7 +306,9 @@ export function syncStaves(score: Score) {
     const m = score.measures.indexOf(measure);
     while (measure.staves.length < score.staves.length) measure.staves.push(restsFor(barTicks(score, m)));
     measure.staves.length = score.staves.length;
-    if (measure.voice2 && measure.voice2.length > score.staves.length) measure.voice2.length = score.staves.length;
+    for (const f of EXTRA_VOICES) {
+      if (measure[f] && measure[f]!.length > score.staves.length) measure[f]!.length = score.staves.length;
+    }
   }
 }
 
@@ -397,8 +419,8 @@ export function reflow(score: Score, from: number) {
   const staves = score.staves.length;
   const lanesToFlow: { s: number; v: number; events: NoteEvent[] }[] = [];
   for (let s = 0; s < staves; s++) {
-    for (const v of [0, 1]) {
-      if (v && !score.measures.slice(from).some((m) => m.voice2?.[s])) continue;
+    for (let v = 0; v < MAX_VOICES; v++) {
+      if (v && !score.measures.slice(from).some((m) => m[voiceField(v)]?.[s])) continue;
       // the old stream (a missing voice 2 counts as a bar of rest so the voices stay aligned)
       const stream: NoteEvent[] = [];
       score.measures.slice(from).forEach((bar) => {
@@ -463,9 +485,8 @@ export function reflow(score: Score, from: number) {
   for (let k = from; k < score.measures.length; k++) {
     for (let s = 0; s < staves; s++) {
       setLane(score.measures[k], s, 0, restsFor(barTicks(score, k)));
-      if (score.measures[k].voice2?.[s]) score.measures[k].voice2![s] = null;
+      for (let v = 1; v < MAX_VOICES; v++) dropLane(score.measures[k], s, v);
     }
-    if (score.measures[k].voice2?.every((l) => !l)) delete score.measures[k].voice2;
   }
   for (const { s, v, bars } of result) {
     bars.forEach((events, k) => {

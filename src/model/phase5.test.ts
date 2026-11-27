@@ -42,8 +42,13 @@ describe('two voices on one staff', () => {
   it('switching voice keeps the beat and lands on voice 1 where there is no voice 2', () => {
     const ed = twoVoices();
     ed.setCursor({ m: 0, s: 0, i: 2, v: 1 }); // A4 on beat 3
-    ed.toggleVoice();
+    ed.toggleVoice(0); // straight back to voice 1 (V alone moves on to voice 3)
     expect(ed.cursor).toMatchObject({ v: 0, i: 1 }); // D5 half note covers beat 3
+    ed.setCursor({ m: 0, s: 0, i: 2, v: 1 });
+    ed.toggleVoice();
+    expect(ed.cursor.v).toBe(2);
+    ed.toggleVoice(); // voice 3 had nothing in it: it is dropped again on the way to voice 4
+    expect(laneOf(ed.score.measures[0], 0, 2)).toBeUndefined();
     ed.setCursor({ m: 1, s: 0, i: 0, v: 1 });
     ed.removeVoice2();
     expect(laneOf(ed.score.measures[1], 0, 1)).toBeUndefined();

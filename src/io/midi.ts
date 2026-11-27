@@ -25,8 +25,9 @@ const tempoMeta = (bpm: number) => {
  */
 export function toMidi(score: Score): Uint8Array<ArrayBuffer> {
   const { notes, events, tempos } = fullTimeline(score);
-  // channel 10 (index 9) is reserved for drums in General MIDI
-  const channel = (s: number) => (s >= 9 ? s + 1 : s) & 0x0f;
+  // channel 10 (index 9) is for drums in General MIDI: drum staves play there, the rest skip it
+  const drumStaff = (s: number) => score.staves[s]?.clef === 'percussion';
+  const channel = (s: number) => (drumStaff(s) ? 9 : (s >= 9 ? s + 1 : s) & 0x0f);
   const evs: { tick: number; data: number[]; order: number }[] = [];
   for (const t of tempos) evs.push({ tick: t.tick, data: tempoMeta(t.bpm), order: -2 });
   // time signature at the first bar and wherever it changes along the playback
@@ -50,7 +51,7 @@ export function toMidi(score: Score): Uint8Array<ArrayBuffer> {
   const nameBytes = Array.from(new TextEncoder().encode(score.title));
   const track: number[] = [
     0, 0xff, 0x03, ...vlq(nameBytes.length), ...nameBytes,
-    ...score.staves.flatMap((st, s) => [0, 0xc0 | channel(s), soundById(st.sound).program]),
+    ...score.staves.flatMap((st, s) => (drumStaff(s) ? [] : [0, 0xc0 | channel(s), soundById(st.sound).program])),
     ...(score.accompaniment?.enabled
       ? [0, 0xc0 | channel(score.staves.length), soundById(score.accompaniment.sound).program]
       : []),

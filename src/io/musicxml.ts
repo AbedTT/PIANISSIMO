@@ -1,5 +1,6 @@
 import { largestFitting, ticksOf, TPQ } from '../model/duration';
 import { midiOf } from '../model/pitch';
+import { drumAt } from '../model/drums';
 import { soundById, soundForProgram } from '../audio/sounds';
 import { chordToText, parseChord, suffixForKind } from '../model/harmony';
 import { lyricsOf, setLyricOn } from '../model/lyrics';
@@ -7,7 +8,7 @@ import { contextAt } from '../model/context';
 import { extractPart, partsOf } from '../model/parts';
 import { transposeEvents, transposeKey, transposeScore } from '../model/transpose';
 import { sameTuplet, TUPLETS } from '../model/duration';
-import { allEvents, barTicks, eventTicks, lanesOf, refitMeasures, restsFor, setLane, tupletGroups, uid } from '../model/score';
+import { allEvents, barTicks, eventTicks, lanesOf, MAX_VOICES, refitMeasures, restsFor, setLane, tupletGroups, uid } from '../model/score';
 import {
   isRest,
   JUMP_LABELS,
@@ -31,7 +32,12 @@ const TYPE_NAME: Record<DurationType, string> = {
 const NAME_TYPE: Record<string, DurationType> = Object.fromEntries(
   Object.entries(TYPE_NAME).map(([k, v]) => [v, k as DurationType]),
 );
-const CLEF_XML: Record<Clef, [string, number]> = { treble: ['G', 2], bass: ['F', 4], alto: ['C', 3] };
+const CLEF_XML: Record<Clef, [string, number]> = { treble: ['G', 2], bass: ['F', 4], alto: ['C', 3], percussion: ['percussion', 0] };
+const clefXML = (s: number, c: Clef) => {
+  const [sign, line] = CLEF_XML[c];
+  return `<clef number="${s + 1}"><sign>${sign}</sign>${line ? `<line>${line}</line>` : ''}</clef>`;
+};
+const clefOfSign = (sign: string): Clef => (sign === 'F' ? 'bass' : sign === 'C' ? 'alto' : sign === 'percussion' ? 'percussion' : 'treble');
 const ART_XML: Record<Articulation, string> = {
   staccato: 'staccato', accent: 'accent', tenuto: 'tenuto', marcato: 'strong-accent', fermata: 'fermata',
 };
@@ -131,10 +137,7 @@ function writePart(score: Score, pid: string, out: string[], transpose: number) 
       out.push(`<key><fifths>${score.keyFifths}</fifths></key>`);
       out.push(`<time><beats>${score.timeBeats}</beats><beat-type>${score.timeBeatType}</beat-type></time>`);
       if (staffCount > 1) out.push(`<staves>${staffCount}</staves>`);
-      score.staves.forEach((st, s) => {
-        const [sign, line] = CLEF_XML[st.clef];
-        out.push(`<clef number="${s + 1}"><sign>${sign}</sign><line>${line}</line></clef>`);
-      });
+      score.staves.forEach((st, s) => out.push(clefXML(s, st.clef)));
       if (transpose) {
         // sounding = written + chromatic (e.g. B♭ clarinet: chromatic -2, diatonic -1)
         out.push(`<transpose><diatonic>${-Math.round((transpose * 7) / 12)}</diatonic><chromatic>${-transpose}</chromatic></transpose>`);
@@ -150,9 +153,7 @@ function writePart(score: Score, pid: string, out: string[], transpose: number) 
       if (measure.key !== undefined) out.push(`<key><fifths>${measure.key}</fifths></key>`);
       if (measure.time) out.push(`<time><beats>${measure.time.beats}</beats><beat-type>${measure.time.beatType}</beat-type></time>`);
       measure.clefs?.forEach((c, s) => {
-        if (!c) return;
-        const [sign, line] = CLEF_XML[c];
-        out.push(`<clef number="${s + 1}"><sign>${sign}</sign><line>${line}</line></clef>`);
+        if (c) out.push(clefXML(s, c));
       });
       out.push('</attributes>');
     }
@@ -172,7 +173,7 @@ function writePart(score: Score, pid: string, out: string[], transpose: number) 
     if (measure.coda) {
       out.push('<direction placement="above"><direction-type><coda/></direction-type><sound coda="coda"/></direction>');
     }
-    // voice 1 of every staff, plus voice 2 where it has notes; each lane after the first rewinds the bar
+    // voice 1 of every staff, plus voices 2–4 where they have notes; each lane after the first rewinds the bar
     const exportLanes = measure.staves.flatMap((_, s) =>
       lanesOf(measure, s)
         .filter(({ v, events }) => !v || events.some((e) => !isRest(e)))
@@ -182,7 +183,7 @@ function writePart(score: Score, pid: string, out: string[], transpose: number) 
     exportLanes.forEach(({ s, v, events }, laneIdx) => {
       // rewind to the start of this bar (bars can differ in length after a time change)
       if (laneIdx > 0) out.push(`<backup><duration>${barTicks(score, m)}</duration></backup>`);
-      const L = s * 2 + v;
+      const L = s * 4 + v;
       const tupletStart = new Set<number>();
       const tupletStop = new Set<number>();
       for (const g of tupletGroups(events)) {
@@ -221,8 +222,11 @@ function writePart(score: Score, pid: string, out: string[], transpose: number) 
         chord.forEach((pitch, k) => {
           out.push('<note>');
           if (k > 0) out.push('<chord/>');
+          const drums = score.staves[s].clef === 'percussion';
           if (!pitch) out.push('<rest/>');
-          else {
+          else if (drums) {
+            out.push(`<unpitched><display-step>${pitch.step}</display-step><display-octave>${pitch.octave}</display-octave></unpitched>`);
+          } else {
             // under 8va/8vb MusicXML keeps the sounding pitch; we store the written one
             out.push(pitchXML(pitch, ottava[L] ?? 0));
           }
@@ -239,7 +243,8 @@ function writePart(score: Score, pid: string, out: string[], transpose: number) 
               `<time-modification><actual-notes>${e.tuplet.actual}</actual-notes><normal-notes>${e.tuplet.normal}</normal-notes></time-modification>`,
             );
           }
-          if (pitch && twoVoices.has(s)) out.push(`<stem>${v ? 'down' : 'up'}</stem>`);
+          if (pitch && twoVoices.has(s)) out.push(`<stem>${v % 2 ? 'down' : 'up'}</stem>`);
+          if (pitch && drums && drumAt(pitch).x) out.push('<notehead>x</notehead>');
           if (staffCount > 1) out.push(`<staff>${s + 1}</staff>`);
           const lead = k === 0;
           const arts = lead ? e.articulations ?? [] : [];
@@ -247,7 +252,8 @@ function writePart(score: Score, pid: string, out: string[], transpose: number) 
           const tStop = lead && tupletStop.has(idx);
           const sStart = lead && !!e.slurEnd && !!pitch;
           const sStop = lead && slurStops.has(e.id) && !!pitch;
-          if (stop || start || arts.length || tStart || tStop || sStart || sStop) {
+          const trem = lead && pitch && e.tremolo ? e.tremolo : 0;
+          if (stop || start || arts.length || tStart || tStop || sStart || sStop || trem) {
             out.push('<notations>');
             if (stop) out.push('<tied type="stop"/>');
             if (start) out.push('<tied type="start"/>');
@@ -258,6 +264,7 @@ function writePart(score: Score, pid: string, out: string[], transpose: number) 
             if (arts.includes('fermata')) out.push('<fermata type="upright"/>');
             const plain = arts.filter((a) => a !== 'fermata');
             if (plain.length) out.push(`<articulations>${plain.map((a) => `<${ART_XML[a]}/>`).join('')}</articulations>`);
+            if (trem) out.push(`<ornaments><tremolo type="single">${trem}</tremolo></ornaments>`);
             out.push('</notations>');
           }
           if (lead && pitch) {
@@ -424,7 +431,10 @@ export function fromMusicXML(xml: string): Score {
         ?.querySelector(':scope > instrument')
         ?.getAttribute('id');
       const sound = (instId && soundOfInst.get(instId)) || partSound;
-      score.staves.push({ clef: sign === 'F' ? 'bass' : sign === 'C' ? 'alto' : 'treble', ...(sound ? { sound } : {}) });
+      const clef = clefOfSign(sign);
+      // a drum staff plays the drum kit, whatever program the file names
+      const staffSound = clef === 'percussion' ? 'drums' : sound;
+      score.staves.push({ clef, ...(staffSound ? { sound: staffSound } : {}) });
     }
     let divisions = 1;
     const slurOpen: (NoteEvent | null)[] = Array(staffCount).fill(null);
@@ -448,7 +458,7 @@ export function fromMusicXML(xml: string): Score {
       if (openVolta) score.measures[m].volta = openVolta;
       // lanes per staff: [voice 1, voice 2]; each remembers how much of the bar it has filled
       type Lane = { events: NoteEvent[]; filled: number };
-      const lanes: (Lane | null)[][] = Array.from({ length: staffCount }, () => [null, null]);
+      const lanes: (Lane | null)[][] = Array.from({ length: staffCount }, () => Array(MAX_VOICES).fill(null));
       const voiceIds: string[][] = Array.from({ length: staffCount }, () => []);
       let pos = 0; // current time position in ticks (moved by notes, <backup> and <forward>)
       const toTicks = (el: Element) => Math.round(((parseInt(text(el, ':scope > duration'), 10) || 0) * TPQ) / divisions);
@@ -490,7 +500,7 @@ export function fromMusicXML(xml: string): Score {
             el.querySelectorAll(':scope > clef').forEach((c) => {
               const idx = staffBase + (parseInt(c.getAttribute('number') ?? '1', 10) || 1) - 1;
               const sign = text(c, 'sign');
-              const clef: Clef = sign === 'F' ? 'bass' : sign === 'C' ? 'alto' : 'treble';
+              const clef: Clef = clefOfSign(sign);
               if (idx < score.staves.length && clef !== before.clefs[idx]) {
                 const clefs = (score.measures[m].clefs ??= score.staves.map(() => null));
                 clefs[idx] = clef;
@@ -554,24 +564,28 @@ export function fromMusicXML(xml: string): Score {
           if (!isChord) pos += ticks; // time moves on even for cue notes and dropped voices
           if (el.querySelector(':scope > cue')) continue;
           const s = Math.min(staffCount - 1, (parseInt(text(el, ':scope > staff'), 10) || 1) - 1);
-          // the first two voices seen on a staff become voice 1 and voice 2; others are dropped
+          // the first four voices seen on a staff become voices 1–4; any more are dropped
           const voiceId = text(el, ':scope > voice') || '1';
           let v = voiceIds[s].indexOf(voiceId);
           if (v < 0) {
-            if (voiceIds[s].length >= 2) continue;
+            if (voiceIds[s].length >= MAX_VOICES) continue;
             voiceIds[s].push(voiceId);
             v = voiceIds[s].length - 1;
           }
           const lane = (lanes[s][v] ??= { events: [], filled: 0 });
           const list = lane.events;
           const pitchEl = el.querySelector(':scope > pitch');
+          const unpitched = el.querySelector(':scope > unpitched');
           const pitch = pitchEl
             ? {
                 step: text(pitchEl, 'step') as Step,
                 alter: Math.round(parseFloat(text(pitchEl, 'alter') || '0')),
                 octave: parseInt(text(pitchEl, 'octave'), 10) + shift[s],
               }
-            : null;
+            : unpitched
+              ? // drums: the staff position is the sound
+                { step: (text(unpitched, 'display-step') || 'C') as Step, alter: 0, octave: parseInt(text(unpitched, 'display-octave'), 10) || 5 }
+              : null;
           if (isChord && list.length) {
             if (pitch) list[list.length - 1].pitches.push(pitch);
             continue;
@@ -606,6 +620,11 @@ export function fromMusicXML(xml: string): Score {
             if (el.querySelector(`notations ${tag}`)) arts.push(a as Articulation);
           }
           if (pitch && arts.length) ev.articulations = arts;
+          const trem = el.querySelector('notations ornaments tremolo');
+          if (pitch && trem && (trem.getAttribute('type') ?? 'single') === 'single') {
+            const strokes = parseInt(trem.textContent ?? '', 10);
+            if (strokes >= 1 && strokes <= 3) ev.tremolo = strokes;
+          }
           if (pitch && pendingDyn[s]) {
             ev.dynamic = pendingDyn[s]!;
             pendingDyn[s] = null;
@@ -649,9 +668,11 @@ export function fromMusicXML(xml: string): Score {
           lane.filled = start + eventTicks(ev);
         }
       }
-      lanes.forEach(([v1, v2], s) => {
+      lanes.forEach(([v1, ...more], s) => {
         score.measures[m].staves[staffBase + s] = v1?.events ?? [];
-        if (v2 && v2.events.some((e) => !isRest(e))) setLane(score.measures[m], staffBase + s, 1, v2.events);
+        more.forEach((l, k) => {
+          if (l && l.events.some((e) => !isRest(e))) setLane(score.measures[m], staffBase + s, k + 1, l.events);
+        });
       });
     });
     const listEntry = root.querySelector(`part-list score-part[id="${part.getAttribute('id')}"]`);
@@ -671,8 +692,8 @@ export function fromMusicXML(xml: string): Score {
       score.measures.forEach((bar, m) => {
         const key = contextAt(score, m).key;
         for (let s = staffBase; s < staffBase + staffCount; s++) {
-          transposeEvents(bar.staves[s] ?? [], -writtenOver, key);
-          if (bar.voice2?.[s]) transposeEvents(bar.voice2[s]!, -writtenOver, key);
+          if (!bar.staves[s]) continue;
+          for (const { events } of lanesOf(bar, s)) transposeEvents(events, -writtenOver, key);
         }
       });
     }

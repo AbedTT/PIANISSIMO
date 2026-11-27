@@ -1,6 +1,6 @@
 import { transposeChord } from './harmony';
 import { midiOf, spellMidi } from './pitch';
-import { allEvents } from './score';
+import { allEvents, lanesOf } from './score';
 import type { NoteEvent, Score } from './types';
 
 /** Key signature after transposing by `semitones` (each semitone = 7 fifths), kept within ±6 when possible. */
@@ -20,11 +20,18 @@ export function transposeEvents(events: NoteEvent[], semitones: number, fifths: 
   }
 }
 
-/** Transpose the whole score to a new key. */
+/** Transpose the whole score to a new key (drum staves stay as they are: their lines are drums, not pitches). */
 export function transposeScore(score: Score, semitones: number) {
   if (!semitones) return;
   score.keyFifths = transposeKey(score.keyFifths, semitones);
-  transposeEvents(allEvents(score), semitones, score.keyFifths);
+  const drums = new Set(score.staves.flatMap((st, s) => (st.clef === 'percussion' ? [s] : [])));
+  if (!drums.size) return transposeEvents(allEvents(score), semitones, score.keyFifths);
+  for (const bar of score.measures) {
+    bar.staves.forEach((_, s) => {
+      if (drums.has(s)) return;
+      for (const { events } of lanesOf(bar, s)) transposeEvents(events, semitones, score.keyFifths);
+    });
+  }
 }
 
 /** Interval names for the transpose dialog. */
