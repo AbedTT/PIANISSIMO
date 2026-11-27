@@ -1109,7 +1109,8 @@ test('desktop updates: a new release shows a bar with its notes; Update now save
   await page.waitFor(`document.querySelector('#searchList li.sel')?.textContent.startsWith('Check for updates')`, 'the command is listed');
   await page.press('Enter');
   await page
-    .waitFor(`!!document.getElementById('updateBar')`, 'bar after Check for updates')
+    // "Checking for updates…" comes first; then the bar with the release
+    .waitFor(`!!document.getElementById('updateBar')?.textContent.includes('is available')`, 'bar after Check for updates')
     .catch(async (err) => {
       const state = await page.eval(
         `JSON.stringify({ search: document.getElementById('searchModal').hidden, value: document.getElementById('searchInput').value, toast: document.getElementById('toast').textContent, active: document.activeElement?.id, modals: [...document.querySelectorAll('.modal:not([hidden])')].map((m) => m.id) })`,
