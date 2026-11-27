@@ -96,6 +96,8 @@ const TABLE: [string, string, string, string][] = [
   ['Done', 'OK', 'Listo', 'Fertig'],
   ['Cancel', 'Annuler', 'Cancelar', 'Abbrechen'],
   ['More', 'Plus', 'Más', 'Mehr'],
+  ['Chord note', 'Note de l’accord', 'Nota del acorde', 'Akkordnote'],
+  ['Esc: whole chord', 'Échap : tout l’accord', 'Esc: todo el acorde', 'Esc: ganzer Akkord'],
   ['Articulations', 'Articulations', 'Articulaciones', 'Artikulation'],
   ['Dynamics', 'Nuances', 'Dinámicas', 'Dynamik'],
 ];

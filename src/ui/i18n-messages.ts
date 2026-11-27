@@ -6,6 +6,7 @@ import type { Row } from './i18n-strings';
  * captured from the English text (titles, names, numbers), kept as they are.
  */
 export const MESSAGE_ROWS: Row[] = [
+  ['No free voice below this chord here: the whole chord was changed', 'Aucune voix libre sous cet accord ici : tout l’accord a été modifié', 'No hay una voz libre debajo de este acorde aquí: se cambió todo el acorde', 'Hier ist keine Stimme unter diesem Akkord frei: der ganze Akkord wurde geändert'],
   ['A collaborator changed the layout of the score (bars or instruments): undo starts again from here', 'Un collaborateur a changé la structure de la partition (mesures ou instruments) : l’annulation repart d’ici', 'Un colaborador cambió la estructura de la partitura (compases o instrumentos): deshacer empieza de nuevo aquí', 'Jemand hat den Aufbau der Partitur geändert (Takte oder Instrumente): Rückgängig beginnt ab hier neu'],
   ['Add chord symbols with Ctrl+K: the accompaniment plays them', 'Ajoutez des accords avec Ctrl+K : l’accompagnement les joue', 'Añade cifrados con Ctrl+K: el acompañamiento los toca', 'Akkordsymbole mit Strg+K hinzufügen: die Begleitung spielt sie'],
   ['Assignment set: students see it in this class', 'Devoir créé : les élèves le voient dans cette classe', 'Tarea creada: los alumnos la ven en esta clase', 'Aufgabe gestellt: die Schüler sehen sie in dieser Klasse'],

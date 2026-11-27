@@ -36,7 +36,7 @@ import { MicInput, type MicFrame } from './audio/micInput';
 import { NoteTracker } from './audio/pitchDetect';
 import { checkScore, outOfRange, type Issue } from './model/checks';
 import { fillLeftHand, suggestChords } from './model/harmonise';
-import { spellMidi } from './model/pitch';
+import { midiOf, spellMidi } from './model/pitch';
 import { PianoKeys } from './ui/pianoKeys';
 import { initTheme, setTheme, themeChoice, toggleTheme, type ThemeChoice } from './ui/theme';
 import { Tutorial } from './ui/tutorial';
@@ -48,6 +48,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const editor = new Editor();
 const player = new Player();
 editor.onPreview = (p, s) => void player.preview(p, editor.score.staves[s]?.sound);
+editor.notice = (msg) => toast(msg);
 player.onLoading = (name, failed) => {
   if (name && failed) toast(`Couldn't load “${name}” (offline?). Using a synth sound for now.`);
   else if (name) toast(`Loading ${name}…`);
@@ -526,6 +527,61 @@ function revealInSheet(left: number, top: number, width: number, height: number)
   else if (x0 + width + pad > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = x0 + width + pad - sc.clientWidth;
 }
 
+/** Each head of the chord under the cursor with the index of its pitch (lowest note = lowest head). */
+function chordHeads(ev: { id: string; pitches: Pitch[] }) {
+  const el = layout?.elements.get(ev.id);
+  if (!el) return [];
+  const rects = [...el.querySelectorAll('.vf-notehead')]
+    .map((n) => n.getBoundingClientRect())
+    .sort((a, b) => b.top + b.height / 2 - (a.top + a.height / 2));
+  const order = ev.pitches.map((p, k) => ({ k, midi: midiOf(p) })).sort((a, b) => a.midi - b.midi);
+  if (rects.length !== order.length) return [];
+  return order.map((o, i) => ({ k: o.k, rect: rects[i] }));
+}
+
+/** A ring around the one chord note that is picked (Alt+Up/Down or a click on its head). */
+function placeChordMark() {
+  const mark = $('chordMark');
+  const ev = editor.current;
+  const k = editor.chordNote;
+  const head = ev && k !== null ? chordHeads(ev).find((h) => h.k === k) : undefined;
+  if (!head) {
+    mark.style.display = 'none';
+    return;
+  }
+  // the head's line or space gives its height (a glyph's box is much taller than the head itself)
+  const st = staveBox(editor.cursor.m, editor.cursor.s);
+  if (!st) {
+    mark.style.display = 'none';
+    return;
+  }
+  const wrap = $('scoreWrap').getBoundingClientRect();
+  const y = st.top + (editor.halfSpacesOf(ev!.pitches[k!], editor.cursor.s) * st.spacing) / 2;
+  const size = st.spacing * 1.9;
+  mark.style.display = 'block';
+  mark.style.left = `${head.rect.left - wrap.left + head.rect.width / 2 - size * 0.62}px`;
+  mark.style.top = `${y - size / 2}px`;
+  mark.style.width = `${size * 1.24}px`;
+  mark.style.height = `${size}px`;
+}
+
+/** A click on one head of a chord picks that note, to change it alone; elsewhere on the chord, the whole chord. */
+function pickChordNote(evt: MouseEvent) {
+  const ev = editor.current;
+  if (!ev || ev.pitches.length < 2) return;
+  const st = staveBox(editor.cursor.m, editor.cursor.s);
+  if (!st) return;
+  const wrap = $('scoreWrap').getBoundingClientRect();
+  // each head's height comes from its line or space; the glyph's box is far taller than the head
+  let best: { k: number; d: number } | null = null;
+  for (const { k, rect } of chordHeads(ev)) {
+    const y = wrap.top + st.top + (editor.halfSpacesOf(ev.pitches[k], editor.cursor.s) * st.spacing) / 2;
+    const d = Math.hypot((evt.clientX - (rect.left + rect.width / 2)) / 1.4, evt.clientY - y);
+    if (!best || d < best.d) best = { k, d };
+  }
+  editor.selectChordNote(best && best.d <= st.spacing * 0.9 ? best.k : null);
+}
+
 function updateCursor(scroll = true) {
   const el = $('cursor');
   const { m, s } = editor.cursor;
@@ -534,6 +590,7 @@ function updateCursor(scroll = true) {
   const st = staveBox(m, s);
   if (!box || !st) {
     el.style.display = 'none';
+    $('chordMark').style.display = 'none';
     return;
   }
   const allSame = editor.events.every((e) => layout!.events.get(e.id)?.x === box.x);
@@ -554,6 +611,7 @@ function updateCursor(scroll = true) {
   }
   el.style.top = `${st.top - st.spacing * 2}px`;
   el.style.height = `${st.spacing * 8}px`;
+  placeChordMark();
   if (scroll) revealInSheet(parseFloat(el.style.left), parseFloat(el.style.top), parseFloat(el.style.width), st.spacing * 8);
   updateSelection();
   updateStatus();
@@ -631,6 +689,7 @@ function updateStatus() {
     <span>${t('Bar')} <b>${editor.cursor.m + 1}</b> / ${editor.score.measures.length}</span>
     <span>${partsOf(editor.score).length > 1 ? `<b>${partOfStaff(editor.score, editor.cursor.s).part.name}</b> · ` : ''}${t('Staff')} <b>${t(clef)}</b>${editor.voice ? ` · <b class="v${editor.voice + 1}">${t('voice')} ${editor.voice + 1}</b>` : ''}</span>
     <span>${t('At cursor')} <b>${what}</b></span>
+    ${editor.chordNote !== null && ev ? `<span class="chord-pick">${t('Chord note')} <b>${pitchName(ev.pitches[editor.chordNote])}</b> · ${t('Esc: whole chord')}</span>` : ''}
     <span>${t('Input')} <b>${t(durationLabel(editor.inputType))}${editor.inputDots ? ` ${t('dotted')}` : ''}${editor.inputTriplet ? ` ${t('triplet')}` : ''}</b></span>
     ${editor.anchor ? `<span>${t('Selected')} <b>${editor.selected().length}</b> · Ctrl+C / Ctrl+X / Delete</span>` : ''}
     ${midi.enabled ? `<span>MIDI <b>${midi.devices.join(', ') || t('no device')}</b></span>` : ''}
@@ -1232,6 +1291,7 @@ function initMouse() {
     else {
       editor.setCursor(h, e.shiftKey);
       dragFrom = h;
+      if (!e.shiftKey) pickChordNote(e);
     }
   });
   // drag across notes to select them (then Ctrl+C / the copy button, and paste elsewhere)

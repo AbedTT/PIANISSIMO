@@ -185,6 +185,41 @@ const REST_VALUES = (['w', 'h', 'q', '8', '16', '32', '64'] as const).map((type)
  * (two eighth rests on a beat become a quarter rest, a half rest never starts on beat 2 of 4/4).
  * Rests carrying a chord symbol, tuplet rests and notes are left alone.
  */
+/**
+ * Index of the event that starts exactly at `tick` in voice `v` of staff `s`, bar `m` (the voice is
+ * created if needed); a rest running across `tick` is split there. Null when a note or a tuplet
+ * runs across it.
+ */
+export function indexAtTickSplit(score: Score, m: number, s: number, v: number, tick: number): number | null {
+  const events = ensureLane(score, m, s, v);
+  let t = 0;
+  for (let i = 0; i < events.length; i++) {
+    const len = eventTicks(events[i]);
+    if (t === tick) return i;
+    if (t < tick && tick < t + len) {
+      if (!isRest(events[i]) || events[i].tuplet) return null;
+      const before = restsFor(tick - t);
+      events.splice(i, 1, ...before, ...restsFor(t + len - tick));
+      return i + before.length;
+    }
+    t += len;
+  }
+  return null;
+}
+
+/** True when voice `v` of staff `s` has only rests (or does not exist) from `from` to `to` in bar `m`. */
+export function restsBetween(score: Score, m: number, s: number, v: number, from: number, to: number): boolean {
+  const events = laneOf(score.measures[m], s, v);
+  if (!events) return true;
+  let t = 0;
+  for (const e of events) {
+    const end = t + eventTicks(e);
+    if (end > from && t < to && !isRest(e)) return false;
+    t = end;
+  }
+  return true;
+}
+
 export function tidyRests(events: NoteEvent[], keepId?: string): NoteEvent[] {
   const out: NoteEvent[] = [];
   let t = 0;

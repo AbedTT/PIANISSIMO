@@ -28,7 +28,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 | **Live co-editing (18)** | Invite editors; edit the same score at once with merged bar-level edits, presence cursors and leader-only saving; optional Node realtime service |
 | **Rounding out (24–28)** | Wait mode with the microphone or on-screen piano; grades, marking criteria and a due-date calendar; notifications and an admin screen for reports; translated messages and guide; up to four voices per staff |
 | **Closing the list (29)** | Scanning sheet music (with Audiveris on the server); self-service data download and account deletion; Privacy and Terms rewritten and all legal pages translated (draft for review); emails in each person's language, or a daily digest; voices 3–4 kept clear of 1–2 |
-| **Quality** | Command registry for shortcuts, toolbar, help and search; 187 unit and API tests; 19 end-to-end browser tests (headless Chrome over the DevTools protocol, no extra dependencies), including two-person sessions, a fake microphone, offline use and phone layouts down to 320px |
+| **Quality** | Command registry for shortcuts, toolbar, help and search; 195 unit and API tests; 20 end-to-end browser tests (headless Chrome over the DevTools protocol, no extra dependencies), including two-person sessions, a fake microphone, offline use and phone layouts down to 320px |
 
 ---
 
@@ -338,6 +338,8 @@ Beyond the original plan, built after it was complete.
 - [x] **Combine voices into chords**: where voice 2 moves with voice 1, both share one stem (soprano + alto, tenor + bass); other notes stay in voice 2.
 - [x] **Beaming by the time signature**: 6/8, 9/8 and 12/8 beam eighths in threes.
 - [x] **Select by dragging** across notes, with **Copy, Cut and Paste** buttons in the toolbar.
+- [x] **Change one note of a chord**: click its head (or Alt+Up/Down) to pick it; a letter, the arrows, octave, accidentals and Delete then change only that note. Escape goes back to the whole chord.
+- [x] **A different length for one chord note**: with a chord note picked, a new length gives it its own stem in the voice below (alto under soprano, bass under tenor), so the parts can move separately while staying aligned; the top note keeps the upper stem.
 - [x] **The score setup panel folds away** on wider screens (the settings button in the top bar); the choice is remembered.
 
 **Phases 1–31 are complete.** Section 2 lists what is still open.

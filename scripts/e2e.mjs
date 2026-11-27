@@ -861,6 +861,29 @@ test('editing: drag to select, copy and paste from the toolbar, fold the panel, 
   assert(saved === 'Tune: EPIPHANE | Based on Isaiah 9:6', `saved notes: ${saved}`);
 });
 
+test('chords: pick one note of a chord and change it alone', async (page) => {
+  await page.goto('/app.html?template=blank-piano');
+  await settled(page);
+  await page.eval(`document.getElementById('score').focus()`);
+  await page.press('C');
+  await page.press('Shift+KeyE'); // C5 with E5 above: a chord
+  await page.press('ArrowLeft');
+  const chord = () => page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures[0].staves[0][0].pitches.map((p) => p.step + p.octave).sort().join(' ')`);
+  assert((await chord()) === 'C5 E5', `the chord: ${await chord()}`);
+  await page.press('Alt+ArrowDown'); // picks the top note, E5
+  await page.waitFor(`document.querySelector('.chord-pick')?.textContent.includes('E5')`, 'the top note is picked');
+  await page.press('F'); // only that note becomes F
+  await page.frames();
+  assert((await chord()) === 'C5 F5', `only the picked note changed: ${await chord()}`);
+  await page.press('ArrowUp'); // and moves alone
+  await page.frames();
+  assert((await chord()) === 'C5 G5', `moved alone: ${await chord()}`);
+  await page.press('Escape');
+  await page.press('ArrowUp'); // the whole chord again
+  await page.frames();
+  assert((await chord()) === 'A5 D5', `whole chord moved: ${await chord()}`);
+});
+
 // keep last: it stops the web server
 test('offline: the installed app reloads and keeps working without the server', async (page, browser, ctx) => {
   await page.goto('/app.html?template=blank-piano');

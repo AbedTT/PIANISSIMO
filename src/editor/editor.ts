@@ -30,6 +30,8 @@ import {
   writeStream,
   type StreamItem,
   startTick,
+  indexAtTickSplit,
+  restsBetween,
   writeAt,
   dropLane,
   MAX_VOICES,
@@ -121,6 +123,8 @@ export class Editor {
   private listeners: Listener[] = [];
   /** Called when a note should be auditioned. */
   onPreview: (pitches: Pitch[], staff: number) => void = () => {};
+  /** A short message for the person (the app shows it as a toast). */
+  notice: ((message: string) => void) | null = null;
 
   constructor(score?: Score) {
     this.score = score ?? Editor.restore() ?? newScore();
@@ -283,6 +287,7 @@ export class Editor {
 
   /** Start/clear a range selection before a cursor move. */
   private beginMove(extend: boolean) {
+    this.chordFocus = null; // a picked chord note is forgotten when the cursor moves
     if (extend) this.anchor ??= { ...this.cursor };
     else this.anchor = null;
   }
@@ -424,6 +429,64 @@ export class Editor {
     return t ? [t] : [];
   }
 
+  // ---------- one note of a chord ----------
+  /** The chord note picked by clicking its head or with Alt+Up/Down. */
+  private chordFocus: { id: string; k: number } | null = null;
+
+  /**
+   * Index (into the chord's pitches) of the note picked in the chord under the cursor, or null
+   * when commands apply to the whole chord. Moving to another note forgets the pick.
+   */
+  get chordNote(): number | null {
+    const e = this.current;
+    const f = this.chordFocus;
+    if (!e || !f || this.anchor || f.id !== e.id || e.pitches.length < 2 || f.k >= e.pitches.length) return null;
+    return f.k;
+  }
+
+  /** Pick one note of the chord under the cursor, or null for the whole chord again. */
+  selectChordNote(k: number | null) {
+    const e = this.current;
+    this.chordFocus = e && k !== null && e.pitches.length > 1 && k >= 0 && k < e.pitches.length ? { id: e.id, k } : null;
+    const picked = this.chordNote;
+    if (e && picked !== null) this.onPreview([e.pitches[picked]], this.cursor.s);
+    this.emit('cursor');
+  }
+
+  /**
+   * Alt+Up/Down: walk through the chord's notes (Up from the lowest, Down from the highest);
+   * past the last one it is the whole chord again. False when the cursor is not on a chord.
+   */
+  cycleChordNote(dir: 1 | -1): boolean {
+    const e = this.current;
+    if (!e || e.pitches.length < 2 || this.anchor) return false;
+    const order = e.pitches
+      .map((p, k) => ({ k, midi: midiOf(p) }))
+      .sort((a, b) => a.midi - b.midi)
+      .map((x) => x.k);
+    const cur = this.chordNote;
+    const pos = (cur === null ? (dir > 0 ? -1 : order.length) : order.indexOf(cur)) + dir;
+    this.selectChordNote(pos < 0 || pos >= order.length ? null : order[pos]);
+    return true;
+  }
+
+  /** Change the targets' pitches; with one chord note picked, only that note. */
+  private updatePitches(fn: (p: Pitch, at: Located) => Pitch, preview = true) {
+    const k = this.chordNote;
+    if (k === null) {
+      this.updateTargets((e, at) => {
+        e.pitches = e.pitches.map((p) => fn(p, at));
+      }, preview);
+      return;
+    }
+    const at: Located = { ...this.cursor, e: this.current! };
+    this.mutate((score) => {
+      const e = eventAt(score, at)!;
+      e.pitches = e.pitches.map((p, i) => (i === k ? fn(p, at) : p));
+    });
+    if (preview) this.onPreview([this.current!.pitches[k]], at.s);
+  }
+
   /** Next event after a position on the same staff (crossing bar lines). */
   private nextOnStaff(p: Located): Located | null {
     const v = p.v ?? 0;
@@ -538,6 +601,12 @@ export class Editor {
 
   typeLetter(step: Step) {
     const { m, s } = this.cursor;
+    const k = this.chordNote;
+    if (k !== null) {
+      // replace only the picked chord note, nearest to where it was
+      this.updatePitches((p) => this.toConcert(nearestPitch(step, this.toWritten(p, s, m), this.writtenKey(s, m)), s, m));
+      return;
+    }
     // in the transposed view the letter names the written note of a transposing instrument
     const written = nearestPitch(step, this.toWritten(this.referencePitch(), s, m), this.writtenKey(s, m));
     this.write([this.toConcert(written, s, m)]);
@@ -673,29 +742,20 @@ export class Editor {
 
   /** Raise/lower by diatonic step (all chord notes; whole selection when there is one). */
   shift(steps: number) {
-    this.updateTargets((e, at) => {
-      e.pitches = e.pitches.map((p) => shiftDiatonic(p, steps, this.keyAt(at.m)));
-    });
+    this.updatePitches((p, at) => shiftDiatonic(p, steps, this.keyAt(at.m)));
   }
 
   octave(dir: 1 | -1) {
-    this.updateTargets((e) => {
-      e.pitches = e.pitches.map((p) => ({ ...p, octave: p.octave + dir }));
-    });
+    this.updatePitches((p) => ({ ...p, octave: p.octave + dir }));
   }
 
   /** Toggle sharp/flat/natural. Pressing again returns to the key-signature default. */
   accidental(alter: number) {
-    this.updateTargets((e, at) => {
-      const fifths = this.keyAt(at.m);
-      e.pitches = e.pitches.map((p) => ({ ...p, alter: p.alter === alter ? keyAlter(p.step, fifths) : alter }));
-    });
+    this.updatePitches((p, at) => ({ ...p, alter: p.alter === alter ? keyAlter(p.step, this.keyAt(at.m)) : alter }));
   }
 
   enharmonic() {
-    this.updateTargets((e) => {
-      e.pitches = e.pitches.map(enharmonic);
-    }, false);
+    this.updatePitches((p) => enharmonic(p), false);
   }
 
   toggleTie() {
@@ -821,32 +881,76 @@ export class Editor {
   private retimeCurrent() {
     const cur = this.current;
     if (!cur || isRest(cur) || this.anchor) return;
+    const k = this.chordNote;
+    const same = cur.type === this.inputType && cur.dots === this.inputDots && (cur.tuplet?.actual ?? 0) === (this.inputTuplet?.actual ?? 0);
+    if (k !== null && !same) {
+      if (!this.splitChordNote(k)) this.notice?.('No free voice below this chord here: the whole chord was changed');
+      else return;
+    }
     const { m, s, i } = this.cursor;
     const v = this.voice;
+    this.mutate((score) => this.retimeAt(score, m, s, i, v, cur, cur.pitches));
+  }
+
+  /**
+   * Give the event at (m, s, i, v) the input length, keeping its marks. Longer than what is left of
+   * the bar, it carries on into the next bar as tied notes (overwriting what is there), like a note
+   * written at the end of a bar; its marks stay on the first part.
+   */
+  private retimeAt(score: Score, m: number, s: number, i: number, v: number, cur: NoteEvent, pitches: Pitch[]) {
     const tuplet = this.inputTuplet ?? undefined;
     const ticks = ticksOf(this.inputType, this.inputDots, tuplet);
-    const room = barTicks(this.score, m) - startTick(this.events, i);
+    const room = barTicks(score, m) - startTick(lane(score, m, s, v), i);
     if (!tuplet && ticks > room) {
-      // Longer than what is left of the bar: carry on into the next bar as tied notes (overwriting
-      // what is there), like a note written at the end of a bar. Its marks stay on the first part.
-      this.mutate((score) => {
-        const { id } = this.writeEvent(score, m, s, i, { ...clone(cur), type: this.inputType, dots: this.inputDots, tuplet: undefined }, v);
-        const first = lane(score, m, s, v).find((e) => e.id === id);
-        if (first && cur.slurEnd) first.slurEnd = cur.slurEnd;
-      });
+      const { id } = this.writeEvent(score, m, s, i, { ...clone(cur), pitches: clone(pitches), type: this.inputType, dots: this.inputDots, tuplet: undefined }, v);
+      const first = lane(score, m, s, v).find((e) => e.id === id);
+      if (first && cur.slurEnd) first.slurEnd = cur.slurEnd;
       return;
     }
+    writeAt(score, m, s, i, { pitches: clone(pitches), type: this.inputType, dots: this.inputDots, tuplet }, cur, v);
+  }
+
+  /**
+   * A new length for one picked note of a chord. Notes on one stem share their length, so the
+   * note gets a stem of its own, the way two singers' parts are written when their rhythms differ:
+   * a lower note (alto under soprano, bass under tenor) goes to the voice below, stems down, with
+   * the new length; when the top note is picked, it keeps the upper stem with the new length and
+   * the notes under it go down unchanged. The cursor follows the part that moves. False when no
+   * voice below is free there.
+   */
+  private splitChordNote(k: number): boolean {
+    const cur = this.current!;
+    const { m, s, i } = this.cursor;
+    const v = this.voice;
+    if (v % 2 === 1) return false; // already the lower (stems-down) part
+    const picked = cur.pitches[k];
+    const others = cur.pitches.filter((_, j) => j !== k);
+    const top = others.every((p) => midiOf(p) <= midiOf(picked));
+    const tick = startTick(this.events, i);
+    const oldTicks = eventTicks(cur);
+    const newTicks = ticksOf(this.inputType, this.inputDots, this.inputTuplet ?? undefined);
+    const lowerTicks = top ? oldTicks : newTicks;
+    const end = Math.min(barTicks(this.score, m), tick + Math.max(oldTicks, lowerTicks));
+    const target = [v + 1, v + 3].find((t) => t < MAX_VOICES && restsBetween(this.score, m, s, t, tick, end));
+    if (target === undefined) return false;
+    let lowerIndex = 0;
     this.mutate((score) => {
-      writeAt(
-        score,
-        m,
-        s,
-        i,
-        { pitches: cur.pitches, type: this.inputType, dots: this.inputDots, tuplet: this.inputTuplet ?? undefined },
-        cur,
-        v,
-      );
+      // the lower part first, so the upper one can still be found at its index
+      const at = indexAtTickSplit(score, m, s, target, tick)!;
+      const lower: EventData = top
+        ? { pitches: clone(others), type: cur.type, dots: cur.dots, ...(cur.tuplet ? { tuplet: { ...cur.tuplet } } : {}), ...(cur.tie ? { tie: true } : {}) }
+        : { pitches: [clone(picked)], type: this.inputType, dots: this.inputDots, ...(this.inputTuplet ? { tuplet: { ...this.inputTuplet } } : {}) };
+      const { id } = this.writeEvent(score, m, s, at, lower, target);
+      lowerIndex = lane(score, m, s, target).findIndex((e) => e.id === id);
+      if (top) this.retimeAt(score, m, s, i, v, cur, [picked]);
+      else lane(score, m, s, v)[i].pitches = clone(others);
     });
+    this.chordFocus = null;
+    this.cursor = top ? { m, s, i, v } : { m, s, i: Math.max(0, lowerIndex), v: target };
+    this.clampCursor();
+    this.emit('ui');
+    this.emit('cursor');
+    return true;
   }
 
   /** Duplicate the target note at the cursor. */
@@ -861,6 +965,16 @@ export class Editor {
 
   // ---------- removing ----------
   remove() {
+    const k = this.chordNote;
+    if (k !== null) {
+      const at: Located = { ...this.cursor, e: this.current! };
+      this.mutate((score) => {
+        eventAt(score, at)!.pitches.splice(k, 1);
+      });
+      this.chordFocus = null;
+      this.emit('cursor');
+      return;
+    }
     if (this.anchor) {
       const sel = this.selected();
       // clear only the notes, from the end: merging rests after a note never moves an earlier note
@@ -1158,10 +1272,6 @@ export class Editor {
   }
 
   /**
-   * Remove the cursor's voice (2–4) from the bar, or selected bars, of the cursor's staff.
-   * From voice 1, voices 2–4 are all removed.
-   */
-  /**
    * Combine voice 2 into voice 1 as chords where both have the same rhythm (one stem for two
    * singers), in the selected bars or, with nothing selected, the whole score. Returns how many
    * notes were combined.
@@ -1181,6 +1291,10 @@ export class Editor {
     return count;
   }
 
+  /**
+   * Remove the cursor's voice (2–4) from the bar, or selected bars, of the cursor's staff.
+   * From voice 1, voices 2–4 are all removed.
+   */
   removeVoice2() {
     const s = this.cursor.s;
     const ms = this.selectedMeasures();
@@ -1352,9 +1466,7 @@ export class Editor {
 
   /** Move notes by a semitone (chromatic), spelled in the current key. */
   chromatic(dir: 1 | -1) {
-    this.updateTargets((e, at) => {
-      e.pitches = e.pitches.map((p) => spellMidi(midiOf(p) + dir, this.keyAt(at.m)));
-    });
+    this.updatePitches((p, at) => spellMidi(midiOf(p) + dir, this.keyAt(at.m)));
   }
 
   togglePlayback(flag: 'metronome' | 'countIn' | 'loop') {
@@ -1374,6 +1486,11 @@ export class Editor {
   }
 
   /** Pitch for a mouse click at a vertical staff position in bar `m`. */
+  /** Half staff spaces from the top line down to `p` as drawn (the inverse of pitchAt). */
+  halfSpacesOf(p: Pitch, s: number, m = this.cursor.m): number {
+    return diatonic(clefMiddle(this.clefAt(m, s))) + 4 - diatonic(this.toWritten(p, s, m));
+  }
+
   pitchAt(s: number, halfSpacesFromTop: number, m = this.cursor.m): Pitch {
     // the click names a written note; store the concert pitch
     return this.toConcert(pitchAtStaffPosition(this.clefAt(m, s), halfSpacesFromTop, this.writtenKey(s, m)), s, m);

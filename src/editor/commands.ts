@@ -262,6 +262,7 @@ export const COMMANDS: Command[] = [
     group: 'Interface',
     keys: ['Escape'],
     run: (ed) => {
+      if (ed.chordNote !== null) return ed.selectChordNote(null); // back to the whole chord
       ed.clearSelection();
       ed.setPalette('notes');
     },
@@ -320,8 +321,26 @@ export const COMMANDS: Command[] = [
   },
   { id: 'prevBar', label: 'Previous bar', group: 'Navigation', keys: ['Ctrl+ArrowLeft'], run: (ed) => ed.stepMeasure(-1) },
   { id: 'nextBar', label: 'Next bar', group: 'Navigation', keys: ['Ctrl+ArrowRight'], run: (ed) => ed.stepMeasure(1) },
-  { id: 'staffUp', label: 'Staff above', group: 'Navigation', keys: ['Ctrl+Shift+ArrowUp', 'Alt+ArrowUp'], run: (ed) => ed.stepStaff(-1) },
-  { id: 'staffDown', label: 'Staff below', group: 'Navigation', keys: ['Ctrl+Shift+ArrowDown', 'Alt+ArrowDown'], run: (ed) => ed.stepStaff(1) },
+  { id: 'staffUp', label: 'Staff above', group: 'Navigation', keys: ['Ctrl+Shift+ArrowUp'], run: (ed) => ed.stepStaff(-1) },
+  { id: 'staffDown', label: 'Staff below', group: 'Navigation', keys: ['Ctrl+Shift+ArrowDown'], run: (ed) => ed.stepStaff(1) },
+  {
+    id: 'chordNoteUp',
+    label: 'Pick the next note up in a chord to change it alone (elsewhere: staff above)',
+    group: 'Navigation',
+    keys: ['Alt+ArrowUp'],
+    run: (ed) => {
+      if (!ed.cycleChordNote(1)) ed.stepStaff(-1);
+    },
+  },
+  {
+    id: 'chordNoteDown',
+    label: 'Pick the next note down in a chord to change it alone (elsewhere: staff below)',
+    group: 'Navigation',
+    keys: ['Alt+ArrowDown'],
+    run: (ed) => {
+      if (!ed.cycleChordNote(-1)) ed.stepStaff(1);
+    },
+  },
   { id: 'home', label: 'Go to start', group: 'Navigation', keys: ['Home'], run: (ed) => ed.setCursor({ m: 0, s: ed.cursor.s, i: 0 }) },
   {
     id: 'end',
