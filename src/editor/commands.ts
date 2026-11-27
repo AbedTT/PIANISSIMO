@@ -26,6 +26,8 @@ export interface AppActions {
   newScore(): void;
   openFile(): void;
   saveFile(): void;
+  /** Desktop app: look for a new release now. */
+  checkUpdates(): void;
   exportMusicXML(): void;
   exportMidi(): void;
   print(): void;
@@ -638,7 +640,7 @@ export const COMMANDS: Command[] = [
   { id: 'open', label: 'Open… (Pianissimo / MusicXML)', group: 'File', keys: ['Ctrl+KeyO'], run: (_, app) => app.openFile() },
   { id: 'save', label: 'Save to my library', group: 'File', keys: ['Ctrl+KeyS'], run: (_, app) => app.saveFile() },
   { id: 'download', label: 'Download a backup file (.json)', group: 'File', keys: ['Ctrl+Shift+KeyS'], run: (_, app) => app.downloadFile() },
-  { id: 'library', label: 'My scores (cloud library)', group: 'File', keys: ['Ctrl+Shift+KeyO'], run: (_, app) => app.openLibrary() },
+  { id: 'library', label: 'My scores', group: 'File', keys: ['Ctrl+Shift+KeyO'], run: (_, app) => app.openLibrary() },
   { id: 'share', label: 'Share a link', group: 'File', keys: ['Alt+KeyS'], run: (_, app) => app.share() },
   { id: 'exportXml', label: 'Export MusicXML', group: 'File', keys: ['Ctrl+Shift+KeyE'], run: (_, app) => app.exportMusicXML() },
   { id: 'exportMidi', label: 'Export MIDI', group: 'File', keys: ['Ctrl+Shift+KeyM'], run: (_, app) => app.exportMidi() },
@@ -674,6 +676,7 @@ export const COMMANDS: Command[] = [
   },
   { id: 'theme', label: 'Dark mode on / off', group: 'Interface', keys: ['Ctrl+Alt+KeyD'], icon: '◐', run: (_, app) => app.toggleTheme() },
   { id: 'tutorial', label: 'Interactive tutorial', group: 'Interface', run: (_, app) => app.startTutorial() },
+  { id: 'checkUpdates', label: 'Check for updates', group: 'Interface', run: (_, app) => app.checkUpdates() },
   { id: 'help', label: 'Keyboard shortcuts', group: 'Interface', keys: ['Shift+Slash'], icon: '?', run: (_, app) => app.showHelp() },
   { id: 'search', label: 'Search commands', group: 'Interface', keys: ['Ctrl+Shift+KeyP', 'F1'], run: (_, app) => app.showSearch() },
   { id: 'lyrics', label: 'Type lyrics (Space = next note, - = hyphen)', group: 'Text', keys: ['Ctrl+KeyL'], icon: '<span class="text-icon">La</span>', run: (_, app) => app.startText('lyric') },

@@ -1,9 +1,15 @@
 import type { Editor } from '../editor/editor';
 import type { Score } from '../model/types';
+import { LocalLibrary, type LocalMeta } from '../library/local';
+import { isValidScore } from '../model/validate';
 import { t } from '../ui/i18n';
 import { api, ApiError, embedCode, shareUrl, type ScoreMeta, type User, type Visibility } from './api';
 
 const CLOUD_ID_KEY = 'pianissimo:cloudId';
+/** The entry of the library on this computer that the editor's score is saved in. */
+const LOCAL_ID_KEY = 'pianissimo:localId';
+/** Changes to a score from the library on this computer are saved this long after the last edit. */
+const LOCAL_SAVE_MS = 1200;
 const SYNC_DELAY_MS = 8000;
 /** How often to check whether the score was saved from another tab or device. */
 const POLL_MS = 20000;
@@ -27,6 +33,15 @@ export class Cloud {
   private saving = false;
   /** A save was refused because the cloud copy changed elsewhere; auto-sync pauses until resolved. */
   private conflict = false;
+  /** The library on this computer (no account or server needed). */
+  readonly local = new LocalLibrary();
+  /** The entry of that library the editor's score is saved in (null = not saved there). */
+  localId: string | null = localStorage.getItem(LOCAL_ID_KEY) || null;
+  private localJson = '';
+  private localSaving = false;
+  private localTimer = 0;
+  /** The online server answered (false in the desktop app without a server, or offline). */
+  serverAvailable = false;
   /** Called when the account or sync state changes (to refresh the top bar). */
   onChange: () => void = () => {};
   /** The editor is now linked to this library score (or to none). */
@@ -65,19 +80,35 @@ export class Cloud {
   mailAvailable = false;
 
   async init() {
+    await this.loadLocal();
     await this.loadAccount();
     await this.followEmailLink();
+  }
+
+  /** Reconnect to the entry of the library on this computer that we were editing before the reload. */
+  private async loadLocal() {
+    if (!this.localId) return;
+    try {
+      const item = await this.local.get(this.localId);
+      if (item) this.localJson = JSON.stringify(item.data);
+      else this.forgetLocal();
+    } catch {
+      /* storage unavailable: keep the id, saving will tell */
+    }
+    this.onChange();
   }
 
   private async loadAccount() {
     try {
       const me = await api.me();
+      this.serverAvailable = true;
       this.user = me.user;
       this.mailAvailable = !!me.mail;
     } catch (err) {
       // offline or no server: the editor still works locally. Keep the link to the cloud copy,
       // so saving resumes when the 'online' event retries init
       this.user = null;
+      this.serverAvailable = false;
       if (!(err instanceof ApiError)) {
         this.onChange();
         return;
@@ -123,6 +154,10 @@ export class Cloud {
 
   /** "Saved" / "Saving…" / "Unsaved changes" / "" (not in the library). */
   get status(): string {
+    if (this.localId) {
+      if (this.localSaving) return 'Saving…';
+      return JSON.stringify(this.editor.score) === this.localJson ? 'Saved on this computer' : 'Unsaved changes';
+    }
     if (!this.user || !this.scoreId) return '';
     if (this.saving) return 'Saving…';
     if (JSON.stringify(this.editor.score) === this.syncedJson) return 'Saved';
@@ -142,7 +177,31 @@ export class Cloud {
     if (had) this.onLinked(null);
   }
 
+  /** Forget the link to the library on this computer. */
+  forgetLocal() {
+    clearTimeout(this.localTimer);
+    this.localId = null;
+    this.localJson = '';
+    localStorage.removeItem(LOCAL_ID_KEY);
+    this.onChange();
+  }
+
+  /** A different score is now in the editor (new, template, opened file…): it is in no library yet. */
+  detach() {
+    this.forget();
+    this.forgetLocal();
+  }
+
+  private linkLocal(id: string, json: string) {
+    this.localId = id;
+    this.localJson = json;
+    localStorage.setItem(LOCAL_ID_KEY, id);
+    this.onChange();
+  }
+
   private link(meta: ScoreMeta, json: string) {
+    // a score lives in one library: now the online one
+    if (this.localId) this.forgetLocal();
     const changed = this.scoreId !== meta.id;
     this.scoreId = meta.id;
     this.meta = meta;
@@ -166,6 +225,45 @@ export class Cloud {
   }
 
   // ------------------------------------------------------------------ saving
+  /**
+   * Ctrl+S: save where this score belongs. A score from the library on this computer stays
+   * there; otherwise it goes to the online library when signed in, or to this computer's.
+   */
+  async saveAnywhere(): Promise<boolean> {
+    if (this.localId || !this.user) return this.saveLocal();
+    return this.save();
+  }
+
+  /** Save what is waiting to be saved (before the app closes for an update). */
+  async flush(): Promise<void> {
+    if (this.status !== 'Unsaved changes') return;
+    if (this.localId) await this.saveLocal(true);
+    else if (this.user && this.scoreId && !this.conflict) await this.save();
+  }
+
+  /** Save to the library on this computer (no account needed). Quiet = an automatic save. */
+  async saveLocal(quiet = false): Promise<boolean> {
+    clearTimeout(this.localTimer);
+    const json = JSON.stringify(this.editor.score);
+    const first = !this.localId;
+    this.localSaving = true;
+    this.onChange();
+    try {
+      const meta = await this.local.save(this.editor.score, this.localId);
+      if (this.scoreId) this.forget(); // it was an online score: this computer's copy is the one now
+      this.linkLocal(meta.id, json);
+      if (first) void LocalLibrary.keep();
+      if (!quiet) this.toast(first ? 'Saved to My scores on this computer' : 'Saved');
+      return true;
+    } catch (err) {
+      this.toast(`Could not save: ${(err as Error).message}`);
+      return false;
+    } finally {
+      this.localSaving = false;
+      this.onChange();
+    }
+  }
+
   async save(force = false): Promise<boolean> {
     if (!this.user) {
       this.showAuth('Sign in to save this score to your library and open it on any device.', () => this.save());
@@ -205,6 +303,14 @@ export class Cloud {
 
   private scheduleSync() {
     this.onChange();
+    if (this.localId) {
+      // a score from the library on this computer keeps itself saved
+      clearTimeout(this.localTimer);
+      this.localTimer = window.setTimeout(() => {
+        if (this.status === 'Unsaved changes') void this.saveLocal(true);
+      }, LOCAL_SAVE_MS);
+      return;
+    }
     if (!this.user || !this.scoreId) return;
     clearTimeout(this.syncTimer);
     this.syncTimer = window.setTimeout(() => {
@@ -243,8 +349,22 @@ export class Cloud {
       <div class="modal" id="libraryModal" hidden>
         <div class="modal-card wide">
           <header><h2>My scores</h2><button class="close" data-close>✕</button></header>
-          <div class="lib-tools"><button class="primary small" id="libSaveCurrent">Save current score here</button><span class="hint" id="libCount"></span></div>
-          <div id="libList" class="lib-list"></div>
+          <div class="lib-tools">
+            <button class="primary small" id="libSaveCurrent">Save current score here</button>
+            <span class="hint" id="libCount"></span>
+            <span class="lib-spacer"></span>
+            <button class="small" id="libBackup" title="All the scores on this computer, as one file">Back up all…</button>
+            <button class="small" id="libRestore" title="Add the scores from a backup file">Restore…</button>
+          </div>
+          <div class="lib-scroll">
+            <h3 class="lib-h">On this computer</h3>
+            <div id="libLocal" class="lib-list"></div>
+            <div id="libOnline" hidden>
+              <h3 class="lib-h">Online library</h3>
+              <div id="libList" class="lib-list"></div>
+            </div>
+            <p class="hint lib-signin" id="libSignIn" hidden>Sign in to keep scores online too and open them on any device. <button type="button" class="link-btn" id="libSignInBtn">Sign in</button></p>
+          </div>
         </div>
       </div>
       <div class="modal" id="shareModal" hidden>
@@ -384,7 +504,29 @@ export class Cloud {
 
     // library
     this.el('libSaveCurrent').addEventListener('click', async () => {
-      if (await this.save()) void this.renderLibrary();
+      if (await this.saveAnywhere()) void this.renderLibrary();
+    });
+    this.el('libSignInBtn').addEventListener('click', () => {
+      this.el('libraryModal').hidden = true;
+      this.showAuth('', () => this.openLibrary());
+    });
+    this.el('libBackup').addEventListener('click', async () => {
+      const url = URL.createObjectURL(new Blob([await this.local.exportAll()], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pianissimo-library-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    this.el('libRestore').addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (file) await this.restoreLibrary(await file.text());
+      };
+      input.click();
     });
 
     // share
@@ -571,17 +713,102 @@ export class Cloud {
   }
 
   async openLibrary(): Promise<void> {
-    if (!this.user) return this.showAuth('Sign in to see your saved scores.', () => this.openLibrary());
     this.el('libraryModal').hidden = false;
     await this.renderLibrary();
   }
 
+  /** Add the scores of a library backup file to this computer's library. */
+  async restoreLibrary(text: string) {
+    try {
+      const n = await this.local.importAll(text, isValidScore);
+      this.toast(`Added ${n} ${n === 1 ? 'score' : 'scores'} to My scores`);
+      if (!this.el('libraryModal').hidden) void this.renderLibrary();
+    } catch (ex) {
+      this.toast((ex as Error).message);
+    }
+  }
+
   private async renderLibrary() {
+    this.el('libOnline').hidden = !this.user;
+    this.el('libSignIn').hidden = !!this.user || !this.serverAvailable;
+    await this.renderLocal();
+    if (this.user) await this.renderOnline();
+  }
+
+  /** The scores saved on this computer. */
+  private async renderLocal() {
+    const host = this.el('libLocal');
+    let scores: LocalMeta[];
+    try {
+      scores = await this.local.list();
+    } catch (ex) {
+      host.innerHTML = `<p class="form-error">${esc((ex as Error).message)}</p>`;
+      return;
+    }
+    this.el('libCount').textContent = this.user ? '' : `${scores.length} ${scores.length === 1 ? 'score' : 'scores'}`;
+    if (!scores.length) {
+      host.innerHTML = `<p class="hint">${t('Nothing here yet. Press Ctrl+S in the editor to save the score you are writing; it then keeps itself saved.')}</p>`;
+      return;
+    }
+    host.innerHTML = scores
+      .map(
+        (s) => `<div class="lib-row ${s.id === this.localId ? 'current' : ''}" data-id="${esc(s.id)}">
+          <div class="lib-main"><b>${esc(s.title)}</b><span>${esc(s.composer)}</span></div>
+          <span class="lib-date">${new Date(s.updated_at).toLocaleString()}</span>
+          <button data-act="open">${t('Open')}</button><button data-act="dup">${t('Duplicate')}</button>${
+            this.user ? `<button data-act="up" title="${t('Copy it to your online library')}">${t('Copy online')}</button>` : ''
+          }<button data-act="del" class="danger">${t('Delete')}</button>
+        </div>`,
+      )
+      .join('');
+    host.querySelectorAll<HTMLElement>('.lib-row').forEach((row) => {
+      const id = row.dataset.id!;
+      const title = scores.find((s) => s.id === id)!.title;
+      row.querySelector('[data-act=open]')!.addEventListener('click', () => void this.openLocal(id));
+      row.querySelector('[data-act=dup]')!.addEventListener('click', async () => {
+        await this.local.duplicate(id);
+        void this.renderLocal();
+      });
+      row.querySelector('[data-act=up]')?.addEventListener('click', async () => {
+        const item = await this.local.get(id);
+        if (!item) return;
+        try {
+          await api.createScore(item.data);
+          this.toast(`“${title}” copied to your online library`);
+          void this.renderOnline();
+        } catch (ex) {
+          this.toast((ex as Error).message);
+        }
+      });
+      row.querySelector('[data-act=del]')!.addEventListener('click', async () => {
+        if (!confirm(t('Delete this score from this computer? This cannot be undone.') + `\n\n${title}`)) return;
+        await this.local.remove(id);
+        if (id === this.localId) this.forgetLocal();
+        void this.renderLocal();
+      });
+    });
+  }
+
+  /** Open a score from the library on this computer; it then keeps itself saved there. */
+  async openLocal(id: string) {
+    const item = await this.local.get(id);
+    if (!item) {
+      this.toast('That score is no longer on this computer');
+      return;
+    }
+    this.confirmLoad(item.data);
+    this.forget();
+    this.linkLocal(id, JSON.stringify(this.editor.score));
+    this.el('libraryModal').hidden = true;
+    this.toast(`Opened “${item.meta.title}”`);
+  }
+
+  /** The scores in the online library. */
+  private async renderOnline() {
     const host = this.el('libList');
     host.innerHTML = '<p class="hint">Loading…</p>';
     try {
       const { scores } = await api.listScores();
-      this.el('libCount').textContent = `${scores.length} ${scores.length === 1 ? 'score' : 'scores'}`;
       if (!scores.length) {
         host.innerHTML = '<p class="hint">Nothing here yet. Press <kbd>Ctrl</kbd>+<kbd>S</kbd> in the editor to save your score.</p>';
         return;
@@ -603,13 +830,13 @@ export class Cloud {
         row.querySelector('[data-act=open]')!.addEventListener('click', () => this.openScore(id));
         row.querySelector('[data-act=dup]')!.addEventListener('click', async () => {
           await api.duplicateScore(id);
-          void this.renderLibrary();
+          void this.renderOnline();
         });
         row.querySelector('[data-act=del]')?.addEventListener('click', async () => {
           if (!confirm(`Delete “${title}” from your library? This cannot be undone.`)) return;
           await api.deleteScore(id);
           if (id === this.scoreId) this.forget();
-          void this.renderLibrary();
+          void this.renderOnline();
         });
       });
     } catch (ex) {

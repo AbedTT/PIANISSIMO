@@ -170,6 +170,19 @@ button.primary.small, .primary.small { padding: 6px 12px; }
 .auth-form .link-btn:hover { text-decoration: underline; }
 .lib-tools { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .lib-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow: auto; }
+.lib-tools { flex-wrap: wrap; }
+/* a new release of the desktop app */
+.update-bar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: min(720px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 12px; background: var(--accent); color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 14px; }
+.update-bar .update-text { flex: 1 1 260px; }
+.update-bar .link-btn { color: #fff; text-decoration: underline; }
+.update-bar button.primary { background: #fff; color: var(--accent); border-color: #fff; }
+.update-bar .update-notes { flex-basis: 100%; margin: 4px 0 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; font: 13px/1.45 inherit; background: rgba(0,0,0,.18); padding: 10px; border-radius: 8px; }
+.lib-spacer { flex: 1; }
+.lib-scroll { max-height: 62vh; overflow: auto; }
+.lib-scroll .lib-list { max-height: none; overflow: visible; }
+.lib-h { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 8px; }
+.lib-h:first-child { margin-top: 4px; }
+.lib-signin { margin-top: 14px; }
 .lib-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; }
 .lib-row.current { border-color: var(--accent); background: var(--accent-soft); }
 .lib-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }

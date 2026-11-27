@@ -73,6 +73,13 @@ function vexflowFonts(): Plugin {
   };
 }
 
+const PKG = JSON.parse(readFileSync(page('package.json'), 'utf8')) as { version: string; pianissimo?: { updateFeed?: string } };
+const VERSION = PKG.version;
+/** Where the desktop app looks for new releases (see src/desktop/updates.ts). */
+const UPDATE_FEED = PKG.pianissimo?.updateFeed ?? '';
+/** The address the update check fetches, which the security policy must allow. */
+const UPDATE_ORIGIN = UPDATE_FEED.startsWith('github:') ? 'https://api.github.com' : /^https:\/\//.test(UPDATE_FEED) ? new URL(UPDATE_FEED).origin : '';
+
 /** Where the instrument samples come from (src/audio/player.ts and sounds.ts). */
 const SAMPLE_HOSTS = 'https://tonejs.github.io https://gleitz.github.io';
 
@@ -90,7 +97,8 @@ export const CSP = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   `media-src 'self' blob: data: ${SAMPLE_HOSTS}`,
-  `connect-src 'self' ${SAMPLE_HOSTS} ws: wss:`,
+  // the update check of the desktop app (src/desktop/updates.ts)
+  `connect-src 'self' ${SAMPLE_HOSTS} ws: wss:${UPDATE_ORIGIN ? ` ${UPDATE_ORIGIN}` : ''}`,
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "object-src 'none'",
@@ -113,12 +121,11 @@ function securityMeta(): Plugin {
 // Multi-page app: the public website, the editor and the score viewer.
 // `base: './'` makes the production build work from any folder,
 // e.g. http://localhost/Pianissimo/dist/ under XAMPP.
-const VERSION = JSON.parse(readFileSync(page('package.json'), 'utf8')).version as string;
 
 export default defineConfig({
   base: './',
   // the app version, sent with error reports (src/monitor/errors.ts)
-  define: { __APP_VERSION__: JSON.stringify(VERSION) },
+  define: { __APP_VERSION__: JSON.stringify(VERSION), __UPDATE_FEED__: JSON.stringify(UPDATE_FEED) },
   plugins: [vexflowFonts(), securityMeta(), serviceWorker()],
   build: {
     outDir: 'dist',

@@ -10,13 +10,17 @@
 // .NET Framework 4.x in every Windows 10/11, so the Windows files can only be built on Windows; on
 // other systems only the macOS/Linux package is made. Zip, tar.gz and .ico files are written here.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { crc32, deflateRawSync, gzipSync } from 'node:zlib';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const { version } = pkg;
+/** Where the installed app looks for new releases (see desktop/windows/Updater.cs). */
+const updateFeed = pkg.pianissimo?.updateFeed ?? '';
 const dist = join(root, 'dist');
 const work = join(root, 'build', 'desktop');
 const release = join(root, 'release');
@@ -206,7 +210,10 @@ if (process.platform === 'win32' && csc) {
   const icon = join(work, 'pianissimo.ico');
   writeFileSync(icon, ico([readFileSync(join(root, 'public', 'icons', 'icon-192.png'))]));
   const buildInfo = join(work, 'BuildInfo.cs');
-  writeFileSync(buildInfo, `namespace Pianissimo { static class BuildInfo { public const string Version = "${version}"; } }\n`);
+  writeFileSync(
+    buildInfo,
+    `namespace Pianissimo { static class BuildInfo { public const string Version = "${version}"; public const string UpdateFeed = ${JSON.stringify(updateFeed)}; } }\n`,
+  );
   const compile = (out, files, extra = []) => {
     const args = [
       '/nologo', '/target:winexe', '/optimize+', '/platform:anycpu', `/out:${out}`,
@@ -224,7 +231,7 @@ if (process.platform === 'win32' && csc) {
   };
 
   const launcher = join(work, 'Pianissimo.exe');
-  compile(launcher, [join(src, 'Common.cs'), join(src, 'Launcher.cs'), buildInfo]);
+  compile(launcher, [join(src, 'Common.cs'), join(src, 'Launcher.cs'), join(src, 'Updater.cs'), buildInfo], ['/r:System.Web.Extensions.dll']);
   sign(launcher); // before it goes into the installer and the zip
   const readme = Buffer.from(
     [
@@ -244,7 +251,7 @@ if (process.platform === 'win32' && csc) {
   writeFileSync(payload, zip(programEntries('')));
   const setup = join(release, `Pianissimo-Setup-${version}.exe`);
   compile(setup, [join(src, 'Common.cs'), join(src, 'Setup.cs'), buildInfo], [
-    '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll', `/resource:${payload},payload.zip`,
+    '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll', '/r:System.Management.dll', `/resource:${payload},payload.zip`,
   ]);
   sign(setup);
   made.push(setup);
@@ -289,6 +296,23 @@ if (process.platform === 'win32' && csc) {
     ]),
   );
   made.push(tar);
+}
+
+// latest.json: what a self-hosted update feed serves (pianissimo.updateFeed = https://…/latest.json).
+// Put it next to the three files on your website. A GitHub feed does not need it.
+{
+  const sha = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
+  const byName = (re) => made.find((f) => re.test(f));
+  const setupFile = byName(/Setup-.*\.exe$/);
+  const tarFile = byName(/macos-linux\.tar\.gz$/);
+  const latest = {
+    version,
+    notes: process.env.PIANISSIMO_RELEASE_NOTES ?? '',
+    ...(setupFile ? { windows: basename(setupFile) } : {}),
+    ...(tarFile ? { macosLinux: basename(tarFile) } : {}),
+    sha256: { ...(setupFile ? { windows: sha(setupFile) } : {}), ...(tarFile ? { macosLinux: sha(tarFile) } : {}) },
+  };
+  writeFileSync(join(release, 'latest.json'), JSON.stringify(latest, null, 2) + '\n');
 }
 
 console.log('\nDesktop packages:');

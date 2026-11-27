@@ -149,9 +149,9 @@ export const COMMAND_ROWS: Row[] = [
   // files
   ['New score', 'Nouvelle partition', 'Nueva partitura', 'Neue Partitur'],
   ['Open… (Pianissimo / MusicXML)', 'Ouvrir… (Pianissimo / MusicXML)', 'Abrir… (Pianissimo / MusicXML)', 'Öffnen… (Pianissimo / MusicXML)'],
+  ['Check for updates', 'Rechercher des mises à jour', 'Buscar actualizaciones', 'Nach Updates suchen'],
   ['Save to my library', 'Enregistrer dans ma bibliothèque', 'Guardar en mi biblioteca', 'In meiner Bibliothek speichern'],
   ['Download a backup file (.json)', 'Télécharger une sauvegarde (.json)', 'Descargar una copia (.json)', 'Sicherungsdatei herunterladen (.json)'],
-  ['My scores (cloud library)', 'Mes partitions (bibliothèque en ligne)', 'Mis partituras (biblioteca en la nube)', 'Meine Noten (Online-Bibliothek)'],
   ['Share a link', 'Partager un lien', 'Compartir un enlace', 'Link teilen'],
   ['Export MusicXML', 'Exporter en MusicXML', 'Exportar MusicXML', 'MusicXML exportieren'],
   ['Export MIDI', 'Exporter en MIDI', 'Exportar MIDI', 'MIDI exportieren'],

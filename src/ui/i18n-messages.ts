@@ -6,6 +6,10 @@ import type { Row } from './i18n-strings';
  * captured from the English text (titles, names, numbers), kept as they are.
  */
 export const MESSAGE_ROWS: Row[] = [
+  ['This is the web version of Pianissimo: it updates itself whenever you reload the page', 'Ceci est la version web de Pianissimo : elle se met à jour chaque fois que vous rechargez la page', 'Esta es la versión web de Pianissimo: se actualiza sola cada vez que recargas la página', 'Dies ist die Web-Version von Pianissimo: sie aktualisiert sich bei jedem Neuladen der Seite'],
+  ['Saved to My scores on this computer', 'Enregistré dans Mes partitions sur cet ordinateur', 'Guardado en Mis partituras en este equipo', 'In „Meine Noten“ auf diesem Computer gespeichert'],
+  ['Saved', 'Enregistré', 'Guardado', 'Gespeichert'],
+  ['That score is no longer on this computer', 'Cette partition n’est plus sur cet ordinateur', 'Esa partitura ya no está en este equipo', 'Diese Partitur ist nicht mehr auf diesem Computer'],
   ['Your new password is saved and you are signed in', 'Votre nouveau mot de passe est enregistré et vous êtes connecté', 'Tu nueva contraseña está guardada y has iniciado sesión', 'Ihr neues Passwort ist gespeichert und Sie sind angemeldet'],
   ['Password changed. Your other devices are signed out.', 'Mot de passe changé. Vos autres appareils sont déconnectés.', 'Contraseña cambiada. Se cerró la sesión en tus otros dispositivos.', 'Passwort geändert. Ihre anderen Geräte sind abgemeldet.'],
   ['Welcome! We sent you a link to confirm your email address.', 'Bienvenue ! Nous vous avons envoyé un lien pour confirmer votre adresse e-mail.', '¡Bienvenido! Te enviamos un enlace para confirmar tu correo.', 'Willkommen! Wir haben Ihnen einen Link zur Bestätigung Ihrer E-Mail-Adresse gesendet.'],
@@ -100,6 +104,10 @@ export const MESSAGE_PATTERNS: { re: RegExp; to: [string, string, string] }[] = 
   { re: /^Loading (.+)…$/, to: ['Chargement de $1…', 'Cargando $1…', '$1 wird geladen…'] },
   { re: /^Not quite: sing or play (.+)$/, to: ['Pas tout à fait : chantez ou jouez $1', 'Casi: canta o toca $1', 'Noch nicht: $1 singen oder spielen'] },
   { re: /^Not quite: play (.+)$/, to: ['Pas tout à fait : jouez $1', 'Casi: toca $1', 'Noch nicht: $1 spielen'] },
+  { re: /^Added (\d+) scores? to My scores$/, to: ['$1 partition(s) ajoutée(s) à Mes partitions', '$1 partitura(s) añadida(s) a Mis partituras', '$1 Partitur(en) zu „Meine Noten“ hinzugefügt'] },
+  { re: /^“(.+)” copied to your online library$/, to: ['« $1 » copiée dans votre bibliothèque en ligne', '«$1» copiada a tu biblioteca en línea', '„$1“ in Ihre Online-Bibliothek kopiert'] },
+  { re: /^You have the latest version \((.+)\)$/, to: ['Vous avez la dernière version ($1)', 'Tienes la última versión ($1)', 'Sie haben die neueste Version ($1)'] },
+  { re: /^Could not check for updates: (.+)$/, to: ['Impossible de vérifier les mises à jour : $1', 'No se pudo comprobar si hay actualizaciones: $1', 'Konnte nicht nach Updates suchen: $1'] },
   { re: /^Opened “(.+)”$/, to: ['« $1 » ouvert', '«$1» abierta', '„$1“ geöffnet'] },
   { re: /^Recorded (\d+) notes? \(Ctrl\+Z to undo\)$/, to: ['$1 note(s) enregistrée(s) (Ctrl+Z pour annuler)', '$1 nota(s) grabada(s) (Ctrl+Z para deshacer)', '$1 Note(n) aufgenommen (Strg+Z macht rückgängig)'] },
   { re: /^Restored the version from (.+) \(Ctrl\+Z undoes\)$/, to: ['Version du $1 restaurée (Ctrl+Z annule)', 'Restaurada la versión del $1 (Ctrl+Z deshace)', 'Version vom $1 wiederhergestellt (Strg+Z macht rückgängig)'] },

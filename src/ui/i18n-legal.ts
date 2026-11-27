@@ -137,6 +137,11 @@ export const LEGAL_BLOCKS: Record<string, [string, string, string]> = {
     'Solo te escribimos si el sitio tiene el correo activado: un enlace para confirmar tu dirección al registrarte, un enlace para elegir una nueva contraseña cuando lo pidas y copias de tus notificaciones (una por aviso o un resumen diario, como prefieras). Puedes desactivar los correos de notificación en el panel 🔔 del editor.',
     'Wir schreiben Ihnen nur, wenn die Website E-Mail eingeschaltet hat: einen Link zur Bestätigung Ihrer Adresse bei der Anmeldung, einen Link für ein neues Passwort, wenn Sie danach fragen, und Kopien Ihrer Benachrichtigungen (eine je Ereignis oder eine tägliche Zusammenfassung, wie Sie wählen). Benachrichtigungs-E-Mails können Sie im 🔔-Bereich des Editors abschalten.',
   ],
+  'pv.updates': [
+    'L’application de bureau vérifie une fois par jour si une nouvelle version est sortie (sur la page des versions du projet, GitHub). Cette demande ne contient rien sur vous ni sur vos partitions ; comme tout téléchargement, elle montre votre adresse internet à la page des versions.',
+    'La aplicación de escritorio comprueba una vez al día si hay una versión nueva (en la página de versiones del proyecto, GitHub). Esa consulta no contiene nada sobre ti ni tus partituras; como cualquier descarga, muestra tu dirección de internet a la página de versiones.',
+    'Die Desktop-App fragt einmal am Tag, ob eine neue Version erschienen ist (auf der Release-Seite des Projekts, GitHub). Diese Anfrage enthält nichts über Sie oder Ihre Partituren; wie jeder Download zeigt sie der Release-Seite Ihre Internetadresse.',
+  ],
   'pv.h.errors': ['Rapports d’erreur', 'Informes de errores', 'Fehlerberichte'],
   'pv.errors': [
     'Quand quelque chose ne marche pas dans l’éditeur ou sur le site, un court rapport technique part vers le serveur du site pour que le problème soit corrigé : le message d’erreur, l’endroit dans le code du programme, le nom de la page, la version de Pianissimo et le nom et la version du navigateur. Il ne contient jamais vos partitions, votre nom ni votre adresse e-mail, et les administrateurs du site suppriment les rapports une fois le problème corrigé.',

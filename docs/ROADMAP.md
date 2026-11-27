@@ -6,7 +6,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 
 ---
 
-## 1. Where we are (phases 1–33, shipped)
+## 1. Where we are (phases 1–34, shipped)
 
 | Area | Shipped |
 |---|---|
@@ -360,7 +360,12 @@ Beyond the original plan, built after it was complete.
 - [x] **Signed installers**: `npm run package` signs the Windows programs with Authenticode (certificate file or store, timestamped) when a certificate is configured, and says so when not; checked with a test certificate. On macOS the install script clears the download's quarantine flag and signs the app locally, so Gatekeeper opens it.
 - [x] **Lint**: stricter compiler settings, the tests type-checked too (which found a test using a note length that does not exist), and `scripts/lint.mjs` for project rules (no `eval`/`debugger`/`.only`, `noopener` on new-tab links, every toast translated, PHP strict types and no request input in SQL text, no private keys, whitespace, `php -l`). `npm run lint` runs in CI.
 
-**Phases 1–33 are complete.** Section 2 lists what is still open.
+### Phase 34: My scores without an account, and updates for the desktop app ✅
+- [x] **A library on this computer**: Ctrl+S saves the score to **My scores** without signing in or a server (IndexedDB, persistent storage requested). A saved score keeps itself saved as you edit ("Saved on this computer"). My scores lists every score to open, duplicate or delete; when signed in it shows the online library too, with **Copy online**. **Back up all…** / **Restore…** move the whole library as one file. Without a server (the desktop app on its own) the Sign in button is hidden.
+- [x] **Updates for the desktop app**: the launcher tells the app its version (`/__desktop.json`); once a day the app looks at the latest GitHub release (or a self-hosted `latest.json`) and shows a bar with what is new, **Update now** / **Download** and **Later**; also *Check for updates* in the command search.
+- [x] **One-click install on Windows**: the launcher downloads the setup only from that repository's releases, checks the file, its SHA-256 and (for signed builds) the publisher's signature, and runs it with `/update`. The setup waits for the window to close (it closes itself after saving), installs over the old version keeping scores, settings and shortcuts, and opens Pianissimo again. Requests from other websites are refused. Tested with a local feed (download, checksum rejection) and against the real GitHub repository; the final install step was not run, so as not to replace the installed copy on the development machine.
+
+**Phases 1–34 are complete.** Section 2 lists what is still open.
 
 ## 5. How a phase is built
 

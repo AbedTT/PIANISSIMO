@@ -25,7 +25,15 @@ ask for administrator rights. Start Pianissimo from the Start menu or the deskto
 - **Score files.** `.pianissimo` files open in Pianissimo when double-clicked. MusicXML (`.musicxml`,
   `.mxl`) and MIDI (`.mid`) files get **Open with → Pianissimo**; the program you already use for
   them stays the default.
-- **Updating.** Run the newer setup; your scores are kept.
+- **Your scores.** **Save** (Ctrl+S) puts the score in **My scores**, the library on this computer; from
+  then on it saves itself as you edit. Open **My scores** to switch between scores, duplicate or delete
+  them. No account or server is needed. **Back up all…** there writes every score to one file (keep it on
+  a USB stick or in the cloud); **Restore…** or **Open** adds them back, also on another computer.
+- **Updates.** Once a day Pianissimo checks whether a new version is out. If so, a bar at the top shows
+  what is new, with **Update now**: it saves your work, downloads the new setup, checks it, installs it and
+  opens Pianissimo again (your scores and settings stay). **Later** waits for the next version. You can
+  also run *Check for updates* from the command search (Ctrl+Shift+P). The portable copy, and the Mac and
+  Linux versions, show a **Download** button instead. Running a newer setup by hand works too.
 - **Removing.** Go to *Settings → Apps → Installed apps → Pianissimo → Uninstall*. You are asked whether
   to keep the scores saved on the computer.
 - **"Windows protected your PC".** Unless the release was signed (see *Signing*), SmartScreen may warn
@@ -65,6 +73,26 @@ files. The `pianissimo` command also works if `~/.local/bin` is on your PATH.
 - **Removing.** Run `sh ~/.local/share/pianissimo/program/uninstall.sh`. Add `--purge` to delete the
   saved scores as well.
 - **Without installing.** You can also run `python3 pianissimo.py` from the unpacked folder.
+
+## Publishing an update
+
+People who installed Pianissimo are told about a new version by the app itself. The app looks at the
+latest release of the GitHub repository in `package.json` (`"pianissimo": { "updateFeed": "github:AbedTT/PIANISSIMO" }`);
+the repository must be public. To release:
+
+1. Raise `"version"` in `package.json` (e.g. `0.4.0` → `0.5.0`): only a higher version counts as an update.
+2. `npm run package` (signed, if you set up signing).
+3. On GitHub: **Releases → Draft a new release**, tag `v0.5.0`, write what is new (people see this text
+   in the app under *What's new*), and attach the three files from `release/`. Publish.
+
+Within a day every copy checks and offers it. Windows installs it with **Update now**: it accepts only a
+`Pianissimo-Setup-*.exe` from that repository's releases, compares it with the SHA-256 that GitHub
+publishes for each file, and, once your releases are signed, requires the same publisher's signature.
+
+**Without GitHub.** Set `updateFeed` to the address of a `latest.json` on your own website
+(`https://music.example.com/downloads/latest.json`). `npm run package` writes that file into `release/`
+(with checksums); put it and the three files in that folder. Set `PIANISSIMO_RELEASE_NOTES` while
+packaging to include the notes.
 
 ## Signing in, sharing and the online library
 

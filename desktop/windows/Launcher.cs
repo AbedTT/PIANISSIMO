@@ -370,6 +370,37 @@ namespace Pianissimo
                 Send(s, 200, "OK", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(answer), false, null);
                 return;
             }
+            if (req.Path == "/__desktop.json")
+            {
+                // tells the app it runs as the desktop app: it then checks for new releases
+                string info = "{\"platform\":\"windows\",\"version\":" + JsonString(BuildInfo.Version) + ",\"canInstall\":" + (Updater.CanInstall ? "true" : "false") + "}";
+                Send(s, 200, "OK", "application/json", Encoding.UTF8.GetBytes(info), req.Method == "HEAD", new[] { "Cache-Control: no-store" });
+                return;
+            }
+            if (req.Path == "/__desktop/update")
+            {
+                // "Update now": only from our own page (the custom header cannot be sent by other sites without
+                // a permission this server never gives; the Origin must be ours too)
+                string origin = req.Header("Origin");
+                bool ours = origin == "http://127.0.0.1:" + port || origin == "http://localhost:" + port;
+                if (req.Method != "POST" || req.Header("X-Pianissimo-Desktop") != "1" || !ours)
+                {
+                    Send(s, 403, "Forbidden", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Forbidden"), false, null);
+                    return;
+                }
+                try
+                {
+                    if (!Updater.CanInstall && !Updater.DryRun) throw new Exception("This copy of Pianissimo is not installed (the portable version): download the new version instead.");
+                    string setup = Updater.Prepare();
+                    if (!Updater.DryRun) Updater.Run(setup);
+                    Send(s, 200, "OK", "application/json", Encoding.UTF8.GetBytes("{\"ok\":true,\"setup\":" + JsonString(Path.GetFileName(setup)) + "}"), false, new[] { "Cache-Control: no-store" });
+                }
+                catch (Exception ex)
+                {
+                    Send(s, 500, "Internal Server Error", "application/json", Encoding.UTF8.GetBytes("{\"error\":" + JsonString(ex.Message) + "}"), false, new[] { "Cache-Control: no-store" });
+                }
+                return;
+            }
             if (req.Path.StartsWith("/__open/"))
             {
                 string[] parts = req.Path.Split('/');
@@ -426,6 +457,18 @@ namespace Pianissimo
             }
             string cache = req.Path.StartsWith("/assets/") ? "Cache-Control: public, max-age=31536000, immutable" : "Cache-Control: no-cache";
             Send(s, 200, "OK", MimeType(full), File.ReadAllBytes(full), req.Method == "HEAD", new[] { cache });
+        }
+
+        static string JsonString(string value)
+        {
+            StringBuilder sb = new StringBuilder("\"");
+            foreach (char c in value ?? "")
+            {
+                if (c == '"' || c == '\\') sb.Append('\\').Append(c);
+                else if (c < ' ') sb.Append("\\u").Append(((int)c).ToString("x4"));
+                else sb.Append(c);
+            }
+            return sb.Append('"').ToString();
         }
 
         static string MimeType(string path)

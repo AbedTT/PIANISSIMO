@@ -788,6 +788,81 @@ test(
   { needsApi: true },
 );
 
+test('library on this computer: save several scores without an account, open any of them, edits keep saving', async (page) => {
+  const setTitle = (title) =>
+    page.eval(`(() => { const t = document.getElementById('title'); t.value = ${JSON.stringify(title)}; t.dispatchEvent(new Event('input')); t.dispatchEvent(new Event('change')); return true; })()`);
+  const status = `document.getElementById('cloudStatus').textContent`;
+  // signed out (earlier tests signed in: then Ctrl+S would save a new score to the online library)
+  await page.send('Network.clearBrowserCookies');
+  // two scores, each saved with Ctrl+S
+  for (const [tpl, title] of [['waltz', 'Local waltz'], ['blues', 'Local blues']]) {
+    await page.goto(`/app.html?template=${tpl}`);
+    await page.waitFor(`document.querySelector('#score svg')`);
+    await setTitle(title);
+    await page.press('Ctrl+S');
+    await page.waitFor(`${status}.includes('Saved on this computer')`, `${title} saved`);
+  }
+  assert(await page.eval(`document.getElementById('authModal').hidden`), 'no sign-in was asked for');
+
+  // My scores lists both; open the first one
+  await page.eval(`document.querySelector('[data-cmd=library]').click(), true`);
+  await page.waitFor(`document.querySelectorAll('#libLocal .lib-row').length === 2`, 'both scores in My scores');
+  await page.eval(`[...document.querySelectorAll('#libLocal .lib-row')].find((r) => r.textContent.includes('Local waltz')).querySelector('[data-act=open]').click(), true`);
+  await page.waitFor(`document.getElementById('title').value === 'Local waltz'`, 'the waltz is open');
+
+  // edits save themselves; after a restart both are still there, with the change
+  await setTitle('Local waltz, edited');
+  await page.waitFor(`${status}.includes('Saved on this computer')`, 'the edit saved itself');
+  await page.goto('/app.html');
+  await page.waitFor(`document.getElementById('title').value === 'Local waltz, edited' && ${status}.includes('Saved on this computer')`, 'reopened where we left off');
+  await page.eval(`document.querySelector('[data-cmd=library]').click(), true`);
+  await page.waitFor(`(() => { const t = [...document.querySelectorAll('#libLocal .lib-row b')].map((b) => b.textContent); return t.length === 2 && t.includes('Local waltz, edited') && t.includes('Local blues'); })()`, 'library after reload');
+});
+
+test('desktop updates: a new release shows a bar with its notes; Update now saves and asks the launcher to install', async (page) => {
+  // pretend to be the installed Windows app (the launcher's /__desktop.json) with a newer release on GitHub
+  await page.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `(() => {
+      const real = window.fetch.bind(window);
+      window.__updateCalls = [];
+      window.close = () => { window.__closed = true; };
+      const json = (body) => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+      window.fetch = (input, init) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.endsWith('/__desktop.json')) return Promise.resolve(json({ platform: 'windows', version: '0.4.0', canInstall: true }));
+        if (url.includes('api.github.com/repos/')) return Promise.resolve(json({ tag_name: 'v0.5.0', body: '- Faster engraving\\n- A new tutorial', html_url: 'https://example.com/r' }));
+        if (url.endsWith('/__desktop/update')) { window.__updateCalls.push(init?.headers); return Promise.resolve(json({ ok: true })); }
+        return real(input, init);
+      };
+    })();`,
+  });
+  await page.goto('/app.html?template=waltz');
+  await page.eval(`localStorage.removeItem('pianissimo:updateCheck'), localStorage.removeItem('pianissimo:updateLater'), true`);
+  await page.goto('/app.html');
+  await page.waitFor(`document.getElementById('updateBar')?.textContent.includes('Pianissimo 0.5.0 is available')`, 'update bar', 15000);
+  await page.eval(`[...document.querySelectorAll('#updateBar button')].find((b) => b.textContent === "What's new").click(), true`);
+  assert(await page.eval(`document.querySelector('#updateBar .update-notes').textContent.includes('Faster engraving')`), 'release notes shown');
+  // Later hides it, and the next start does not ask again for this version
+  await page.eval(`[...document.querySelectorAll('#updateBar button')].find((b) => b.textContent === 'Later').click(), true`);
+  assert(await page.eval(`!document.getElementById('updateBar')`), 'Later hides the bar');
+  // asking from the command search shows it again; Update now goes to the launcher
+  await page.press('Ctrl+Shift+KeyP');
+  await page.eval(`(() => { const i = document.querySelector('#searchModal input, #searchInput'); i.value = 'check for updates'; i.dispatchEvent(new Event('input')); return true; })()`);
+  await page.press('Enter');
+  await page
+    .waitFor(`!!document.getElementById('updateBar')`, 'bar after Check for updates')
+    .catch(async (err) => {
+      const state = await page.eval(
+        `JSON.stringify({ search: document.getElementById('searchModal').hidden, value: document.getElementById('searchInput').value, toast: document.getElementById('toast').textContent, active: document.activeElement?.id, modals: [...document.querySelectorAll('.modal:not([hidden])')].map((m) => m.id) })`,
+      );
+      throw new Error(`${err.message} ${state}`);
+    });
+  await page.eval(`[...document.querySelectorAll('#updateBar button')].find((b) => b.textContent === 'Update now').click(), true`);
+  await page.waitFor(`document.getElementById('updateBar').textContent.includes('Installing the update')`, 'installing');
+  assert(await page.eval(`window.__updateCalls.length === 1 && window.__updateCalls[0]['X-Pianissimo-Desktop'] === '1'`), 'asked the launcher with its header');
+  await page.waitFor(`window.__closed === true`, 'the window closes for the setup');
+});
+
 test('notation: drum kit, tablature and chord diagram templates', async (page) => {
   await page.goto('/app.html?template=guitar-song');
   await page.waitFor(`document.querySelectorAll('#score .vf-tabnote').length >= 12`, 'tab notes drawn');

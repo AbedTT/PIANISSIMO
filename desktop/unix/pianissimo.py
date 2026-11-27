@@ -52,6 +52,15 @@ MIME = {
 }
 
 
+def read_version():
+    """The installed version (the VERSION file next to this script)."""
+    try:
+        with open(os.path.join(HERE, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def read_server():
     value = os.environ.get("PIANISSIMO_SERVER", "")
     if not value and os.path.exists(SETTINGS_FILE):
@@ -114,6 +123,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self.send(404, b"No such file")
                 return self.send(200, register(target).encode())
             return self.send(200, b"ok")
+        if path == "/__desktop.json":
+            # tells the app it runs as the desktop app, so it checks for new releases (and offers the download)
+            info = {"platform": "macos" if MAC else "linux", "version": read_version(), "canInstall": False}
+            return self.send(200, json.dumps(info).encode(), "application/json", [("Cache-Control", "no-store")], self.command == "HEAD")
         if path.startswith("/__open/"):
             parts = path.split("/")
             target = OPEN_FILES.get(parts[2]) if len(parts) > 2 else None

@@ -6,11 +6,14 @@
 //
 //   Pianissimo-Setup.exe        the setup window
 //   Pianissimo-Setup.exe /S     silent install (for scripted roll-outs); /server=https://… sets the online server
+//   Pianissimo-Setup.exe /update  started by the app's "Update now": waits for Pianissimo to close,
+//                                 installs over it (scores, settings and shortcuts stay) and opens it again
 using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.IO.Compression;
+using System.Management;
 using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
@@ -23,13 +26,15 @@ namespace Pianissimo
         [STAThread]
         static int Main(string[] args)
         {
-            bool silent = false;
+            bool silent = false, update = false;
             string serverArg = null;
             foreach (string a in args)
             {
                 if (a == "/S" || a == "--silent") silent = true;
+                else if (a == "/update") update = true;
                 else if (a.StartsWith("/server=")) serverArg = a.Substring(8);
             }
+            if (update) return Update();
             if (silent)
             {
                 try
@@ -46,6 +51,52 @@ namespace Pianissimo
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new SetupForm());
             return 0;
+        }
+
+        /// <summary>The app asked for this update: let its window close, install, open it again.</summary>
+        static int Update()
+        {
+            try
+            {
+                CloseAppWindows();
+                // keep the desktop shortcut as it was; the server setting stays (null = keep)
+                Install(File.Exists(Common.DesktopShortcut), null, null);
+                Process.Start(Path.Combine(Common.InstallDir, "Pianissimo.exe"));
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "The update of Pianissimo could not be installed:\n\n" + ex.Message +
+                    "\n\nYour scores are safe. Please download the new version and run its setup again.",
+                    Common.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 1;
+            }
+        }
+
+        /// <summary>The app window closes itself after asking for the update, so the browser can store
+        /// everything; give it some seconds, then close what is left of Pianissimo's own browser profile.</summary>
+        static void CloseAppWindows()
+        {
+            for (int i = 0; i < 30 && Common.ProfileInUse(); i++) Thread.Sleep(500);
+            if (!Common.ProfileInUse()) return;
+            string profile = Common.ProfileDir;
+            try
+            {
+                using (ManagementObjectSearcher search = new ManagementObjectSearcher(
+                    "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'msedge.exe' OR Name = 'chrome.exe'"))
+                {
+                    foreach (ManagementObject p in search.Get())
+                    {
+                        string cmd = p["CommandLine"] as string;
+                        // only the browser windows of Pianissimo's profile, never your own browser
+                        if (cmd == null || cmd.IndexOf(profile, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        try { Process.GetProcessById(Convert.ToInt32(p["ProcessId"])).Kill(); } catch { }
+                    }
+                }
+            }
+            catch (Exception) { }
+            for (int i = 0; i < 10 && Common.ProfileInUse(); i++) Thread.Sleep(500);
         }
 
         public static void Install(bool desktopShortcut, string server, Action<int> progress)

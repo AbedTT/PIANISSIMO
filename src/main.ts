@@ -1,4 +1,7 @@
 import { startErrorReporting } from './monitor/errors';
+import { isValidScore } from './model/validate';
+import { LocalLibrary } from './library/local';
+import { initUpdates } from './desktop/updateUi';
 import './styles.css';
 import './ios.css';
 import { MidiInput } from './audio/midiInput';
@@ -62,6 +65,8 @@ const cloud = new Cloud(editor, (m) => toast(m), (s) => {
   player.stop();
   editor.load(s);
 });
+// desktop app: new releases (checked once a day; "Check for updates" in the command search)
+const updates = initUpdates({ toast: (m) => toast(m), beforeInstall: () => cloud.flush() });
 midi.onChord = (notes) => {
   if (practice) return practiseChord(notes);
   if (!recording) editor.writeMidi(notes); // while recording, notes are collected with their timing instead
@@ -166,9 +171,6 @@ function download(data: BlobPart, name: string, type: string) {
 
 const fileBase = () => (editor.score.title || 'score').replace(/[\\/:*?"<>|]+/g, '').trim() || 'score';
 
-function isValidScore(x: any): x is Score {
-  return x && x.version === 1 && Array.isArray(x.measures) && Array.isArray(x.staves);
-}
 
 // ------------------------------------------------------------------ app actions
 const app: AppActions = {
@@ -208,7 +210,9 @@ const app: AppActions = {
     input.click();
   },
   async saveFile() {
-    if (await cloud.save()) toast('Saved to your library');
+    // signed in, a new score goes online; scores from this computer's library stay there (and say so themselves)
+    const online = !cloud.localId && !!cloud.user;
+    if ((await cloud.saveAnywhere()) && online) toast('Saved to your library');
   },
   downloadFile() {
     download(JSON.stringify(editor.score, null, 1), `${fileBase()}.pianissimo.json`, 'application/json');
@@ -216,6 +220,9 @@ const app: AppActions = {
   },
   openLibrary() {
     void cloud.openLibrary();
+  },
+  checkUpdates() {
+    void updates.checkNow();
   },
   share() {
     void cloud.share();
@@ -395,7 +402,7 @@ const app: AppActions = {
         const score = fromMusicXML(xml);
         player.stop();
         editor.load(score);
-        cloud.forget();
+        cloud.detach();
         toast('Scanned: check the notes against the page, recognition is not perfect (Ctrl+Z returns to your previous score)');
       } catch (err) {
         toast((err as Error).message);
@@ -467,12 +474,18 @@ async function openScoreFile(file: File) {
       const imported = midiToScore(new Uint8Array(await file.arrayBuffer()), file.name.replace(/\.midi?$/i, ''));
       player.stop();
       editor.load(imported);
-      cloud.forget();
+      cloud.detach();
       toast(`Imported “${imported.title}” from MIDI (quantised to 16ths and triplets)`);
       return;
     }
     const text = /\.mxl$/i.test(file.name) ? await readMxl(await file.arrayBuffer()) : await file.text();
     let score: Score;
+    if (LocalLibrary.isBackup(text)) {
+      // a backup of the whole library ("Back up all…"): add its scores to My scores
+      await cloud.restoreLibrary(text);
+      void cloud.openLibrary();
+      return;
+    }
     if (text.trimStart().startsWith('{')) {
       const parsed = JSON.parse(text);
       if (!isValidScore(parsed)) throw new Error('Not a Pianissimo score file.');
@@ -482,7 +495,7 @@ async function openScoreFile(file: File) {
     }
     player.stop();
     editor.load(score);
-    cloud.forget(); // a file is not (yet) in the library
+    cloud.detach(); // a file is not (yet) in a library
     toast(`Opened “${score.title}”`);
   } catch (err) {
     toast(`Could not open file: ${(err as Error).message}`);
@@ -1912,7 +1925,7 @@ function initTemplates() {
       hideModals();
       player.stop();
       editor.load(t.make());
-      cloud.forget();
+      cloud.detach();
       toast(`“${t.name}” template loaded (Ctrl+Z returns to your previous score)`);
     }),
   );
@@ -2034,7 +2047,7 @@ function initModals() {
     hideModals();
     player.stop();
     editor.load(score);
-    cloud.forget();
+    cloud.detach();
     toast('New score: type A–G to start writing');
   };
   // header buttons
@@ -2214,14 +2227,15 @@ function updateAccountUI() {
     void api.setLanguage(currentLang()).catch(() => {});
   }
   const signedIn = !!cloud.user;
-  $('signInBtn').hidden = signedIn;
+  // without a server (the desktop app on its own) there is nothing to sign in to: scores stay on this computer
+  $('signInBtn').hidden = signedIn || !cloud.serverAvailable;
   $('accountMenu').hidden = !signedIn;
   if (cloud.user) $('accountName').textContent = `👤 ${cloud.user.name} ▾`;
   // offer a new confirmation link while the address is not confirmed (and the server can send it)
   $('verifyEmailBtn').hidden = !cloud.user || cloud.user.verified !== false || !cloud.mailAvailable;
   const status = cloud.status;
   const el = $('cloudStatus');
-  el.textContent = status === 'Saved' ? `✓ ${t('Saved')}` : t(status);
+  el.textContent = status === 'Saved' || status === 'Saved on this computer' ? `✓ ${t(status)}` : t(status);
   el.className = `cloud-status ${status === 'Unsaved changes' || status.startsWith('Offline') ? 'dirty' : ''}`;
 }
 cloud.onChange = updateAccountUI;
@@ -2274,7 +2288,7 @@ if (new URLSearchParams(location.search).has('import')) {
     const imported = raw ? JSON.parse(raw) : null;
     if (isValidScore(imported)) {
       editor.load(imported);
-      cloud.forget();
+      cloud.detach();
       toast(`“${imported.title}” copied into the editor (Ctrl+Z returns to your previous score)`);
     }
   } catch {
@@ -2311,7 +2325,7 @@ registerServiceWorker();
   if (tpl) {
     history.replaceState(null, '', location.pathname);
     editor.load(tpl.make());
-    cloud.forget();
+    cloud.detach();
   }
 }
 renderAll();
