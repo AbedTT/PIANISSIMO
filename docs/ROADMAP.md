@@ -388,6 +388,12 @@ Beyond the original plan, built after it was complete.
 - [x] The ES2017 bundle of TensorFlow.js, because the usual one's polyfills evaluate strings, which the Content-Security-Policy forbids (found by the browser test; the policy stays as strict as it was).
 - [x] Wide-range results go on a grand staff, split at middle C. A browser test plays C, F, G and C major chords to the real model and finds their notes.
 
+### 0.5.1: The scanner comes with Pianissimo; clearer updates ✅
+- [x] **The music scanner installs with Pianissimo** (Windows): setup's *Music scanner* box (ticked) downloads the official Audiveris release pinned in `package.json` (`pianissimo.audiveris`: URL, size, SHA-256), checks it, and unpacks it with `msiexec /a` into Pianissimo's own `scanner` folder: no administrator rights, no second installer, no browser download warnings. Updates keep the folder, uninstalling removes it (stopping a running scan first). A failed download does not fail the install. Not embedded in the setup itself: every update would then be ~85 MB instead of ~2 MB.
+- [x] **Set up the scanner** in the app (copies updated from 0.5.0, or set up without it): one click, with a progress bar; the launcher does the same download and check (`/__desktop/scanner/setup`, our page only). Tested for real: the portable copy downloaded and unpacked Audiveris 5.11 and then scanned a page.
+- [x] **Updates**: checked at every start (not more than once in ten minutes) and once a day while the app stays open, instead of once a day. *Check for updates* always answers in the bar: up to date (with the version), or what went wrong with *Try again*. The side panel shows the installed version and a *Check for updates* button in the desktop app.
+- [ ] macOS and Linux still install Audiveris themselves (the dialog shows how): its `.dmg` and `.deb` need the system installer.
+
 **Phases 1–38 are complete.** Section 2 lists what is still open.
 
 ## 5. How a phase is built

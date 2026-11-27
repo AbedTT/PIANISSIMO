@@ -375,7 +375,8 @@ namespace Pianissimo
                 // tells the app it runs as the desktop app: it then checks for new releases
                 // and whether it can scan sheet music here (Audiveris is installed)
                 string info = "{\"platform\":\"windows\",\"version\":" + JsonString(BuildInfo.Version) + ",\"canInstall\":" + (Updater.CanInstall ? "true" : "false") +
-                    ",\"scan\":" + (Scanner.Find() != null ? "true" : "false") + "}";
+                    ",\"scan\":" + (Scanner.Find() != null ? "true" : "false") +
+                    ",\"scannerSetup\":" + (ScannerSetup.Possible ? "true" : "false") + ",\"scannerMegabytes\":" + ScannerSetup.DownloadMegabytes + "}";
                 Send(s, 200, "OK", "application/json", Encoding.UTF8.GetBytes(info), req.Method == "HEAD", new[] { "Cache-Control: no-store" });
                 return;
             }
@@ -399,6 +400,25 @@ namespace Pianissimo
                 {
                     Send(s, 500, "Internal Server Error", "application/json", Encoding.UTF8.GetBytes("{\"error\":" + JsonString(ex.Message) + "}"), false, new[] { "Cache-Control: no-store" });
                 }
+                return;
+            }
+            if (req.Path == "/__desktop/scanner/setup")
+            {
+                // "Set up the scanner": POST starts downloading Audiveris into our folder; GET says how far it is
+                if (req.Method == "POST")
+                {
+                    if (!FromOurPage(req) || !ScannerSetup.Possible)
+                    {
+                        Send(s, 403, "Forbidden", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Forbidden"), false, null);
+                        return;
+                    }
+                    ScannerSetup.Start(AppDomain.CurrentDomain.BaseDirectory);
+                }
+                string st, msg;
+                int pct;
+                ScannerSetup.Status(out st, out pct, out msg);
+                string body = "{\"state\":" + JsonString(st) + ",\"percent\":" + pct + ",\"message\":" + JsonString(msg) + "}";
+                Send(s, 200, "OK", "application/json", Encoding.UTF8.GetBytes(body), false, new[] { "Cache-Control: no-store" });
                 return;
             }
             if (req.Path == "/__desktop/scan")
@@ -653,6 +673,16 @@ namespace Pianissimo
             foreach (Process p in Process.GetProcessesByName("Pianissimo"))
             {
                 if (p.Id != self) try { p.Kill(); } catch { }
+            }
+            // a scan still running from our scanner folder would keep its files locked
+            string scannerDir = ScannerSetup.Folder(AppDomain.CurrentDomain.BaseDirectory);
+            foreach (Process p in Process.GetProcessesByName("Audiveris"))
+            {
+                try
+                {
+                    if (p.MainModule.FileName.StartsWith(scannerDir, StringComparison.OrdinalIgnoreCase)) p.Kill();
+                }
+                catch { }
             }
             bool removeData = !quiet && MessageBox.Show(
                 "Also delete the scores and settings saved on this computer?\n\nChoose No to keep them for a later reinstall. Scores in an online library are not affected.",

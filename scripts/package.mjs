@@ -21,6 +21,8 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const { version } = pkg;
 /** Where the installed app looks for new releases (see desktop/windows/Updater.cs). */
 const updateFeed = pkg.pianissimo?.updateFeed ?? '';
+// the music scanner (Audiveris) that setup and the app install for you: pinned to one release and its checksum
+const audiveris = pkg.pianissimo?.audiveris ?? {};
 const dist = join(root, 'dist');
 const work = join(root, 'build', 'desktop');
 const release = join(root, 'release');
@@ -212,7 +214,9 @@ if (process.platform === 'win32' && csc) {
   const buildInfo = join(work, 'BuildInfo.cs');
   writeFileSync(
     buildInfo,
-    `namespace Pianissimo { static class BuildInfo { public const string Version = "${version}"; public const string UpdateFeed = ${JSON.stringify(updateFeed)}; } }\n`,
+    `namespace Pianissimo { static class BuildInfo { public const string Version = "${version}"; public const string UpdateFeed = ${JSON.stringify(updateFeed)}; ` +
+      `public const string AudiverisVersion = ${JSON.stringify(audiveris.version ?? '')}; public const string AudiverisUrl = ${JSON.stringify(audiveris.windowsUrl ?? '')}; ` +
+      `public const string AudiverisSha256 = ${JSON.stringify(audiveris.windowsSha256 ?? '')}; public const long AudiverisBytes = ${Number(audiveris.windowsBytes ?? 0)}; } }\n`,
   );
   const compile = (out, files, extra = []) => {
     const args = [
@@ -233,7 +237,7 @@ if (process.platform === 'win32' && csc) {
   const launcher = join(work, 'Pianissimo.exe');
   compile(
     launcher,
-    [join(src, 'Common.cs'), join(src, 'Launcher.cs'), join(src, 'Updater.cs'), join(src, 'Scanner.cs'), buildInfo],
+    [join(src, 'Common.cs'), join(src, 'Launcher.cs'), join(src, 'Updater.cs'), join(src, 'Scanner.cs'), join(src, 'ScannerSetup.cs'), buildInfo],
     ['/r:System.Web.Extensions.dll', '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll'],
   );
   sign(launcher); // before it goes into the installer and the zip
@@ -254,7 +258,7 @@ if (process.platform === 'win32' && csc) {
   const payload = join(work, 'payload.zip');
   writeFileSync(payload, zip(programEntries('')));
   const setup = join(release, `Pianissimo-Setup-${version}.exe`);
-  compile(setup, [join(src, 'Common.cs'), join(src, 'Setup.cs'), buildInfo], [
+  compile(setup, [join(src, 'Common.cs'), join(src, 'Setup.cs'), join(src, 'ScannerSetup.cs'), buildInfo], [
     '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll', '/r:System.Management.dll', `/resource:${payload},payload.zip`,
   ]);
   sign(setup);

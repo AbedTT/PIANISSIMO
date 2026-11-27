@@ -3,9 +3,9 @@
 // the app opens as an editable score. Started from the app's "Scan a page…": POST /__desktop/scan
 // with the file as the body.
 //
-// Audiveris is found (in this order) through PIANISSIMO_AUDIVERIS (the path of Audiveris.exe), an
-// "audiveris=" line in settings.ini, or its usual install folders. Its own installer brings the Java
-// it needs.
+// Audiveris is found (in this order) in Pianissimo's own "scanner" folder (see ScannerSetup.cs: setup
+// puts it there), through PIANISSIMO_AUDIVERIS (the path of Audiveris.exe), an "audiveris=" line in
+// settings.ini, or the usual folders of a separately installed Audiveris. It brings its own Java.
 //
 // The file is checked by its content (PDF, PNG, JPEG or TIFF), copied to a private temporary
 // folder, read by Audiveris with a time limit, and the folder is deleted afterwards whatever
@@ -31,6 +31,10 @@ namespace Pianissimo
         public static string Find()
         {
             List<string> candidates = new List<string>();
+            // the scanner Pianissimo set up in its own folder (setup, or "Set up the scanner" in the app)
+            string own = ScannerSetup.FindIn(AppDomain.CurrentDomain.BaseDirectory);
+            if (own == null) own = ScannerSetup.FindIn(Common.InstallDir);
+            if (own != null) candidates.Add(own);
             string env = Environment.GetEnvironmentVariable("PIANISSIMO_AUDIVERIS");
             if (!string.IsNullOrEmpty(env)) candidates.Add(env);
             string setting = Common.ReadSetting("audiveris");

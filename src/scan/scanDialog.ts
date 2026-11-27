@@ -49,6 +49,8 @@ async function findScanner(): Promise<Where> {
 export class ScanDialog {
   readonly el: HTMLElement;
   private where: Where | null = null;
+  /** A page dropped or opened before the scanner was set up: read once it is. */
+  private pending: File | null = null;
   private abort: AbortController | null = null;
   private timer = 0;
 
@@ -90,6 +92,18 @@ export class ScanDialog {
         </div>
         <div data-step="setup" hidden>
           <div data-setup="desktop">
+            <div data-auto>
+              <p>Scanning uses Audiveris, a free program that reads printed music. Pianissimo sets it up for you: one click, nothing else to install.</p>
+              <p class="hint" data-size></p>
+              <div class="scanner-progress" data-progress hidden>
+                <progress max="100" value="0"></progress>
+                <span data-progress-text></span>
+              </div>
+              <p class="form-error" data-setup-error hidden></p>
+              <div class="form-actions"><button type="button" class="primary" data-act="autosetup">Set up the scanner</button></div>
+            </div>
+            <details class="scan-manual" data-manual>
+            <summary>Or install Audiveris yourself</summary>
             <p>Scanning uses Audiveris, a free program that reads printed music. Install it once on this computer:</p>
             <ol class="scan-steps">
               <li><span>Open the Audiveris download page and download the file for your computer:</span> <b data-file></b></li>
@@ -101,6 +115,7 @@ export class ScanDialog {
               <button type="button" data-act="recheck">Check again</button>
             </div>
             <p class="hint">Installed it somewhere else? Add a line audiveris= with the folder of Audiveris to Pianissimo’s settings.ini, then restart Pianissimo.</p>
+            </details>
           </div>
           <div data-setup="web">
             <p>This website has no music scanner set up.</p>
@@ -143,12 +158,14 @@ export class ScanDialog {
         void this.open();
       }),
     );
+    this.el.querySelector('[data-act=autosetup]')!.addEventListener('click', () => void this.setUpScanner(true));
     this.el.querySelector('[data-act=cancel]')!.addEventListener('click', () => this.cancel());
     this.el.querySelector('[data-close]')!.addEventListener('click', () => this.cancel());
   }
 
   /** Open the dialog; with a file (dropped on the editor, or opened), start reading it at once. */
   async open(file?: File) {
+    this.pending = file ?? null;
     this.where ??= await findScanner();
     const where = this.where;
     if (where.kind === 'server' && !this.opts.signedIn()) {
@@ -169,12 +186,69 @@ export class ScanDialog {
             ? t('the .deb file for Ubuntu or Debian (or install Audiveris from Flathub)')
             : t('the .msi file whose name ends in windows-x86_64.msi');
       this.el.querySelector('[data-file]')!.textContent = fileName;
+      // the Windows app sets the scanner up itself; elsewhere the steps to install it are shown
+      const auto = !!desktop?.scannerSetup;
+      (this.el.querySelector('[data-auto]') as HTMLElement).hidden = !auto;
+      const manual = this.el.querySelector<HTMLDetailsElement>('[data-manual]')!;
+      manual.open = !auto;
+      (manual.querySelector('summary') as HTMLElement).hidden = !auto;
+      if (auto) {
+        this.el.querySelector('[data-size]')!.textContent = t('It downloads about {mb} MB once, and is kept in Pianissimo’s folder (removing Pianissimo removes it too).').replace(
+          '{mb}',
+          String(desktop.scannerMegabytes ?? 85),
+        );
+        void this.setUpScanner(false); // already running (the dialog was closed meanwhile)? Show how far
+      }
       return;
     }
     this.step('pick');
     this.error('');
     if (file) void this.scan(file);
     else (this.el.querySelector('.drop-zone') as HTMLElement).focus();
+  }
+
+  /**
+   * "Set up the scanner": the launcher downloads Audiveris and unpacks it next to Pianissimo. With
+   * start = false only show the progress of a setup that is already running.
+   */
+  private async setUpScanner(start: boolean) {
+    const box = this.el.querySelector<HTMLElement>('[data-progress]')!;
+    const bar = box.querySelector('progress')!;
+    const label = this.el.querySelector<HTMLElement>('[data-progress-text]')!;
+    const error = this.el.querySelector<HTMLElement>('[data-setup-error]')!;
+    const button = this.el.querySelector<HTMLButtonElement>('[data-act=autosetup]')!;
+    type Status = { state: 'idle' | 'working' | 'done' | 'error'; percent: number; message: string };
+    const ask = async (method: 'GET' | 'POST'): Promise<Status> => {
+      const res = await fetch('/__desktop/scanner/setup', { method, headers: method === 'POST' ? { 'X-Pianissimo-Desktop': '1' } : {} });
+      if (!res.ok) throw new Error(`The scanner could not be set up (${res.status})`);
+      return (await res.json()) as Status;
+    };
+    try {
+      let status = await ask(start ? 'POST' : 'GET');
+      if (!start && status.state !== 'working') return;
+      error.hidden = true;
+      button.hidden = true;
+      box.hidden = false;
+      while (status.state === 'working') {
+        bar.value = status.percent;
+        label.textContent = status.percent < 90 ? `${t('Downloading the music scanner…')} ${status.percent}%` : t('Unpacking the music scanner…');
+        await new Promise((ok) => setTimeout(ok, 600));
+        if (this.el.hidden) return; // closed: it carries on, and the dialog shows it when opened again
+        status = await ask('GET');
+      }
+      if (status.state === 'error') throw new Error(status.message);
+      bar.value = 100;
+      label.textContent = t('The music scanner is ready.');
+      // straight on to choosing the page (or reading the one that was dropped)
+      this.where = null;
+      await this.open(this.pending ?? undefined);
+    } catch (err) {
+      box.hidden = true;
+      error.textContent = t((err as Error).message);
+      error.hidden = false;
+    } finally {
+      button.hidden = false;
+    }
   }
 
   private step(name: 'pick' | 'busy' | 'setup') {

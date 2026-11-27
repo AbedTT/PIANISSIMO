@@ -2,10 +2,13 @@
 //
 // The program files (Pianissimo.exe and the app folder) are embedded as payload.zip. Setup copies
 // them to %LOCALAPPDATA%\Programs\Pianissimo, adds Start menu (and optionally desktop) shortcuts,
-// "Open with" entries for score files and an entry in Settings > Apps for uninstalling.
+// "Open with" entries for score files and an entry in Settings > Apps for uninstalling. With the
+// music scanner ticked (the default) it also downloads and unpacks Audiveris next to it
+// (see ScannerSetup.cs), so scanning sheet music works straight away.
 //
 //   Pianissimo-Setup.exe        the setup window
-//   Pianissimo-Setup.exe /S     silent install (for scripted roll-outs); /server=https://… sets the online server
+//   Pianissimo-Setup.exe /S     silent install (for scripted roll-outs); /server=https://… sets the online server;
+//                               /noscanner leaves out the music scanner
 //   Pianissimo-Setup.exe /update  started by the app's "Update now": waits for Pianissimo to close,
 //                                 installs over it (scores, settings and shortcuts stay) and opens it again
 using System;
@@ -26,12 +29,13 @@ namespace Pianissimo
         [STAThread]
         static int Main(string[] args)
         {
-            bool silent = false, update = false;
+            bool silent = false, update = false, noScanner = false;
             string serverArg = null;
             foreach (string a in args)
             {
                 if (a == "/S" || a == "--silent") silent = true;
                 else if (a == "/update") update = true;
+                else if (a == "/noscanner") noScanner = true;
                 else if (a.StartsWith("/server=")) serverArg = a.Substring(8);
             }
             if (update) return Update();
@@ -40,6 +44,11 @@ namespace Pianissimo
                 try
                 {
                     Install(true, serverArg, null);
+                    if (!noScanner && ScannerSetup.Possible && ScannerSetup.FindIn(Common.InstallDir) == null)
+                    {
+                        // Pianissimo works without it: a failed download is not a failed install
+                        try { ScannerSetup.Install(Common.InstallDir, null); } catch (Exception) { }
+                    }
                     return 0;
                 }
                 catch (Exception)
@@ -165,6 +174,9 @@ namespace Pianissimo
         readonly Label intro = new Label();
         readonly CheckBox desktop = new CheckBox();
         readonly CheckBox launch = new CheckBox();
+        readonly CheckBox scanner = new CheckBox();
+        readonly Label scannerNote = new Label();
+        readonly Label status = new Label();
         readonly Label serverLabel = new Label();
         readonly TextBox serverBox = new TextBox();
         readonly ProgressBar bar = new ProgressBar();
@@ -183,7 +195,10 @@ namespace Pianissimo
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleMode = AutoScaleMode.Font;
             int extra = update ? 40 : 0; // room for the "update" sentence
-            ClientSize = new Size(520, 410 + extra);
+            bool hasScanner = ScannerSetup.FindIn(Common.InstallDir) != null;
+            bool offerScanner = ScannerSetup.Possible;
+            int room = (offerScanner ? 48 : 0) + 24; // room for the music scanner, and for the folder line
+            ClientSize = new Size(520, 410 + extra + room);
             BackColor = Color.White;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
@@ -208,10 +223,10 @@ namespace Pianissimo
             intro.Text = (update ? "A newer copy replaces the installed one. Your saved scores are kept.\r\n\r\n" : "") +
                 "Pianissimo is installed for your user account only, so no administrator rights are needed.\r\n" +
                 "Folder: " + Common.InstallDir;
-            intro.Bounds = new Rectangle(28, 100, 470, 90 + extra);
+            intro.Bounds = new Rectangle(28, 100, 470, 114 + extra);
             Controls.Add(intro);
 
-            int y = 196 + extra;
+            int y = 220 + extra;
             desktop.Text = "Add a shortcut to the desktop";
             desktop.Checked = !update || File.Exists(Common.DesktopShortcut);
             desktop.Bounds = new Rectangle(28, y, 470, 24);
@@ -220,6 +235,19 @@ namespace Pianissimo
             launch.Checked = true;
             launch.Bounds = new Rectangle(28, y + 28, 470, 24);
             Controls.Add(launch);
+            if (offerScanner)
+            {
+                scanner.Text = "Music scanner: turns PDFs and photos of sheet music into scores";
+                scanner.Checked = true;
+                scanner.Enabled = !hasScanner;
+                scanner.Bounds = new Rectangle(28, y + 56, 470, 24);
+                Controls.Add(scanner);
+                scannerNote.Text = hasScanner ? "Already set up." : "Audiveris, free. Downloads " + ScannerSetup.DownloadMegabytes + " MB once.";
+                scannerNote.ForeColor = Color.FromArgb(110, 110, 115);
+                scannerNote.Bounds = new Rectangle(46, y + 80, 450, 20);
+                Controls.Add(scannerNote);
+                y += 48;
+            }
 
             serverLabel.Text = "Online server (optional, for signing in and sharing)";
             serverLabel.ForeColor = Color.FromArgb(110, 110, 115);
@@ -230,12 +258,15 @@ namespace Pianissimo
             SetCue(serverBox, "https://your-pianissimo-site.example");
             Controls.Add(serverBox);
 
-            bar.Bounds = new Rectangle(28, 334 + extra, 464, 8);
+            status.Bounds = new Rectangle(28, 310 + extra + room, 464, 20);
+            status.ForeColor = Color.FromArgb(110, 110, 115);
+            Controls.Add(status);
+            bar.Bounds = new Rectangle(28, 334 + extra + room, 464, 8);
             bar.Visible = false;
             Controls.Add(bar);
 
             Panel footer = new Panel();
-            footer.Bounds = new Rectangle(0, 350 + extra, 520, 60);
+            footer.Bounds = new Rectangle(0, 350 + extra + room, 520, 60);
             footer.BackColor = Color.FromArgb(242, 242, 247);
             Controls.Add(footer);
             primary.Text = update ? "Update" : "Install";
@@ -279,15 +310,33 @@ namespace Pianissimo
                 serverBox.Focus();
                 return;
             }
-            primary.Enabled = cancel.Enabled = desktop.Enabled = serverBox.Enabled = false;
+            primary.Enabled = cancel.Enabled = desktop.Enabled = serverBox.Enabled = scanner.Enabled = false;
             bar.Visible = true;
             bool wantDesktop = desktop.Checked;
+            bool wantScanner = scanner.Visible && scanner.Checked && ScannerSetup.FindIn(Common.InstallDir) == null;
             Thread worker = new Thread(delegate ()
             {
                 try
                 {
-                    Setup.Install(wantDesktop, server, delegate (int p) { BeginInvoke((Action)delegate { bar.Value = Math.Min(100, p); }); });
-                    BeginInvoke((Action)Done);
+                    // Pianissimo itself first (a third of the bar when the scanner follows)
+                    int share = wantScanner ? 30 : 100;
+                    Setup.Install(wantDesktop, server, delegate (int p) { BeginInvoke((Action)delegate { bar.Value = Math.Min(100, p * share / 100); }); });
+                    string scannerError = null;
+                    if (wantScanner)
+                    {
+                        try
+                        {
+                            ScannerSetup.Install(Common.InstallDir, delegate (int p, string what)
+                            {
+                                BeginInvoke((Action)delegate { bar.Value = Math.Min(100, 30 + p * 70 / 100); status.Text = what; });
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            scannerError = ex is System.Net.WebException ? "it could not be downloaded (no internet connection?)" : ex.Message;
+                        }
+                    }
+                    BeginInvoke((Action)delegate { Done(wantScanner, scannerError); });
                 }
                 catch (Exception ex)
                 {
@@ -295,6 +344,7 @@ namespace Pianissimo
                     {
                         MessageBox.Show(this, "Setup could not finish:\n\n" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
                         primary.Enabled = cancel.Enabled = desktop.Enabled = serverBox.Enabled = true;
+                        scanner.Enabled = ScannerSetup.FindIn(Common.InstallDir) == null;
                         bar.Visible = false;
                     });
                 }
@@ -303,12 +353,16 @@ namespace Pianissimo
             worker.Start();
         }
 
-        void Done()
+        void Done(bool withScanner, string scannerError)
         {
             finished = true;
-            intro.Text = "Pianissimo is installed. Find it in the Start menu" + (desktop.Checked ? " and on your desktop" : "") +
-                ".\r\n\r\nTo remove it later, use Settings > Apps > Installed apps.";
-            desktop.Visible = serverLabel.Visible = serverBox.Visible = false;
+            string scannerText = !withScanner ? "" : scannerError == null
+                ? "\r\n\r\nThe music scanner is ready: in Pianissimo, use Import > Scan a page."
+                : "\r\n\r\nThe music scanner was not set up: " + scannerError + ". Pianissimo works without it, and you can set it up later from Import > Scan a page.";
+            intro.Text = "Pianissimo is installed. Find it in the Start menu" + (desktop.Checked ? " and on your desktop" : "") + "." +
+                scannerText + "\r\n\r\nTo remove it later, use Settings > Apps > Installed apps.";
+            intro.Height = 150;
+            desktop.Visible = serverLabel.Visible = serverBox.Visible = scanner.Visible = scannerNote.Visible = status.Visible = false;
             launch.Top = intro.Bottom + 10;
             bar.Value = 100;
             primary.Text = "Finish";

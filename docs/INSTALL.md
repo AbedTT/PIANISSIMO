@@ -30,11 +30,14 @@ ask for administrator rights. Start Pianissimo from the Start menu or the deskto
   them. No account or server is needed. **Back up all…** there writes every score to one file (keep it on
   a USB stick or in the cloud); **Restore…** or **Open** adds them back, also on another computer.
 - **Scanning sheet music.** *Import ▾ → Scan a page* turns a PDF or photo of printed music into a score,
-  read on this computer by **Audiveris** (free, open source). Install it once: download the file ending in
-  `windows-x86_64.msi` from [its releases page](https://github.com/Audiveris/audiveris/releases/latest) and
-  run it (it brings its own Java). Pianissimo finds it in its usual folder; if you put it elsewhere, add a
-  line `audiveris=C:\path\to\Audiveris` to `settings.ini`. Without Audiveris the dialog shows these steps.
-- **Updates.** Once a day Pianissimo checks whether a new version is out. If so, a bar at the top shows
+  read on this computer by **Audiveris** (free, open source, AGPL-3.0). Setup installs it with Pianissimo
+  (the *Music scanner* box, ticked by default): it downloads the official Audiveris release (about 81 MB,
+  checked against its SHA-256) and unpacks it into `%LOCALAPPDATA%\Programs\Pianissimo\scanner`, without
+  administrator rights or a separate installer. Updates keep it; uninstalling removes it. Left it out, or
+  updated from an older version? *Scan a page* offers **Set up the scanner**: one click does the same. A
+  separately installed Audiveris is found too, or set `audiveris=C:\path\to\Audiveris` in `settings.ini`.
+  Scripted installs: `/noscanner` leaves it out.
+- **Updates.** Each time it starts (and once a day while it stays open) Pianissimo checks whether a new version is out. If so, a bar at the top shows
   what is new, with **Update now**: it saves your work, downloads the new setup, checks it, installs it and
   opens Pianissimo again (your scores and settings stay). **Later** waits for the next version. You can
   also run *Check for updates* from the command search (Ctrl+Shift+P). The portable copy, and the Mac and

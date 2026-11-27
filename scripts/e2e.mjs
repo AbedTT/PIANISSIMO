@@ -884,6 +884,27 @@ test(
     await page.send('Page.navigate', { url: `${url}/app.html?template=blank-piano` });
     await loaded;
     await page.waitFor(`document.querySelector('#score svg')`);
+    // no scanner yet: one click sets it up (downloads Audiveris from GitHub, about 81 MB)
+    const desktop = await page.eval(`fetch('/__desktop.json').then((r) => r.json())`);
+    if (!desktop.scan) {
+      assert(desktop.scannerSetup, 'this launcher can set up the scanner');
+      await page.eval(`document.querySelector('.file-actions [data-cmd=scanMusic]').click(), true`);
+      await page.waitFor(`!document.querySelector('#scanModal [data-auto]').hidden`, 'the one-click setup');
+      await page.shot('scanner-setup');
+      await page.eval(`document.querySelector('#scanModal [data-act=autosetup]').click(), true`);
+      await page.waitFor(`!document.querySelector('#scanModal [data-progress]').hidden`, 'progress');
+      await page.waitFor(`document.querySelector('#scanModal progress').value > 20`, 'downloading', 120000);
+      await page.shot('scanner-downloading');
+      await page.waitFor(
+        `!document.querySelector('#scanModal [data-step=pick]').hidden || !document.querySelector('#scanModal [data-setup-error]').hidden`,
+        'the scanner is set up',
+        600000,
+      );
+      const setupError = await page.eval(`document.querySelector('#scanModal [data-setup-error]').textContent`);
+      assert(await page.eval(`!document.querySelector('#scanModal [data-step=pick]').hidden`), `setup failed: ${setupError}`);
+      assert((await page.eval(`fetch('/__desktop.json').then((r) => r.json())`)).scan, 'the launcher finds the scanner now');
+      await page.eval(`document.querySelector('#scanModal [data-close]').click(), true`);
+    }
     await importFile(page, 'scanMusic', process.env.E2E_SCAN_PDF);
     await page.waitFor(`!document.querySelector('#scanModal [data-step=busy]').hidden`, 'reading');
     await page.waitFor(`document.getElementById('scanModal').hidden || !document.querySelector('#scanModal [data-error]').hidden`, 'Audiveris has read the page', 300000);
@@ -1030,6 +1051,29 @@ test('library on this computer: save several scores without an account, open any
   await page.waitFor(`document.getElementById('title').value === 'Local waltz, edited' && ${status}.includes('Saved on this computer')`, 'reopened where we left off');
   await page.eval(`document.querySelector('[data-cmd=library]').click(), true`);
   await page.waitFor(`(() => { const t = [...document.querySelectorAll('#libLocal .lib-row b')].map((b) => b.textContent); return t.length === 2 && t.includes('Local waltz, edited') && t.includes('Local blues'); })()`, 'library after reload');
+});
+
+test('desktop updates: up to date says so; the side panel shows the version and a check button', async (page) => {
+  await page.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `(() => {
+      const real = window.fetch;
+      const json = (b) => new Response(JSON.stringify(b), { headers: { 'Content-Type': 'application/json' } });
+      window.fetch = (input, init) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.endsWith('/__desktop.json')) return Promise.resolve(json({ platform: 'windows', version: '0.5.1', canInstall: true }));
+        if (url.includes('api.github.com/repos/')) return Promise.resolve(json({ tag_name: 'v0.5.1', body: '', html_url: 'https://example.com/r' }));
+        return real(input, init);
+      };
+    })();`,
+  });
+  await page.goto('/app.html');
+  await page.waitFor(`document.querySelector('#score svg') && !document.getElementById('updatesBtn').hidden`, 'the check button in the side panel');
+  assert((await page.eval(`document.getElementById('appVersion').textContent`)) === 'Pianissimo 0.5.1', 'the version is shown');
+  await page.eval(`document.getElementById('updatesBtn').click(), true`);
+  await page.waitFor(`document.getElementById('updateBar')?.textContent.includes('up to date')`, 'the answer');
+  assert(await page.eval(`document.getElementById('updateBar').textContent.includes('0.5.1') && document.getElementById('updateBar').classList.contains('update-ok')`), 'says which version, in green');
+  await page.eval(`[...document.querySelectorAll('#updateBar button')].find((b) => b.textContent === 'OK').click(), true`);
+  assert(await page.eval(`!document.getElementById('updateBar')`), 'OK closes it');
 });
 
 test('desktop updates: a new release shows a bar with its notes; Update now saves and asks the launcher to install', async (page) => {

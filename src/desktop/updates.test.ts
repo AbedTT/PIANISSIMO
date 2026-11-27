@@ -29,12 +29,14 @@ describe('desktop updates', () => {
     await expect(latestRelease('', json({}))).rejects.toThrow('No update feed');
   });
 
-  it('checks once a day, tells only about newer versions, and respects "Later"', async () => {
+  it('checks at every start (not twice within minutes), tells only about newer versions, and respects "Later"', async () => {
     const storage = memory();
     const feed = json({ tag_name: 'v0.4.0', html_url: 'u' });
     const day0 = 1_000_000_000_000;
     expect((await checkForUpdate(windows, 'github:me/app', { now: day0, storage, fetcher: feed }))?.version).toBe('0.4.0');
-    expect(await checkForUpdate(windows, 'github:me/app', { now: day0 + 3600_000, storage, fetcher: feed })).toBeNull(); // same day
+    expect(await checkForUpdate(windows, 'github:me/app', { now: day0 + 60_000, storage, fetcher: feed })).toBeNull(); // restarted a minute later
+    // started again an hour later (a release published meanwhile is found the same day)
+    expect((await checkForUpdate(windows, 'github:me/app', { now: day0 + 3600_000, storage, fetcher: feed }))?.version).toBe('0.4.0');
     remindLater('0.4.0', storage);
     expect(await checkForUpdate(windows, 'github:me/app', { now: day0 + 2 * 86400_000, storage, fetcher: feed })).toBeNull();
     // asking from the menu always answers

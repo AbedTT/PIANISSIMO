@@ -17,6 +17,9 @@ export interface DesktopInfo {
   canInstall: boolean;
   /** Audiveris is installed on this computer, so "Scan a page" works without a server. */
   scan?: boolean;
+  /** The app can download and set up Audiveris itself (Windows), and how big that download is. */
+  scannerSetup?: boolean;
+  scannerMegabytes?: number;
 }
 
 export interface Release {
@@ -29,7 +32,9 @@ export interface Release {
 
 const LAST_CHECK_KEY = 'pianissimo:updateCheck';
 const LATER_KEY = 'pianissimo:updateLater';
-const DAY = 24 * 3600 * 1000;
+/** Automatic checks: when the app starts (unless it just did), and once a day while it stays open. */
+export const RECHECK_MS = 24 * 3600 * 1000;
+const MIN_GAP_MS = 10 * 60 * 1000;
 
 /** "0.10.1" > "0.9.3"; a leading "v" and a "-beta" suffix are ignored. */
 export function newer(candidate: string, current: string): boolean {
@@ -72,8 +77,9 @@ export async function latestRelease(feed: string, fetcher: typeof fetch = fetch)
 }
 
 /**
- * Is there a newer release? Automatic checks run at most once a day and stay quiet after
- * "Later" for that version; a manual check (`force`) always asks.
+ * Is there a newer release? Automatic checks run each time the app starts (at most every ten
+ * minutes, for quick restarts) and stay quiet after "Later" for that version; a manual check
+ * (`force`) always asks.
  */
 export async function checkForUpdate(
   info: DesktopInfo,
@@ -82,7 +88,7 @@ export async function checkForUpdate(
 ): Promise<Release | null> {
   const now = opts.now ?? Date.now();
   const storage = opts.storage ?? localStorage;
-  if (!opts.force && now - Number(storage.getItem(LAST_CHECK_KEY) ?? 0) < DAY) return null;
+  if (!opts.force && now - Number(storage.getItem(LAST_CHECK_KEY) ?? 0) < MIN_GAP_MS) return null;
   storage.setItem(LAST_CHECK_KEY, String(now));
   const release = await latestRelease(feed, opts.fetcher);
   if (!newer(release.version, info.version)) return null;

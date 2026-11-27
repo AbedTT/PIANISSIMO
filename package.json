@@ -1,6 +1,6 @@
 {
   "name": "pianissimo",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Pianissimo - fast, keyboard-first music notation editor",
   "type": "module",
@@ -17,7 +17,13 @@
     "package": "npm run build && node scripts/package.mjs"
   },
   "pianissimo": {
-    "updateFeed": "github:AbedTT/PIANISSIMO"
+    "updateFeed": "github:AbedTT/PIANISSIMO",
+    "audiveris": {
+      "version": "5.11.0",
+      "windowsUrl": "https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-windows-x86_64.msi",
+      "windowsSha256": "ac221b0d39a90e32b7f43dbf9f5d5a45ff8b5424076af21b65278955688dac71",
+      "windowsBytes": 85062430
+    }
   },
   "dependencies": {
     "tone": "^15.1.22",
