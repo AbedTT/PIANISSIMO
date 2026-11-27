@@ -815,6 +815,19 @@ function showCommandMenu(anchor: HTMLElement, cmds: Command[]) {
     menu.append(b);
   }
   document.body.append(menu);
+  // keep the whole menu on screen: buttons near the right edge open it leftwards, and near the
+  // bottom upwards; a menu taller than the window scrolls
+  const gap = 8;
+  const m = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(gap, Math.min(r.left, window.innerWidth - m.width - gap))}px`;
+  if (r.bottom + 4 + m.height > window.innerHeight - gap) {
+    const above = r.top - 4 - m.height;
+    if (above >= gap) menu.style.top = `${above}px`;
+    else {
+      menu.style.top = `${gap}px`;
+      menu.style.maxHeight = `${window.innerHeight - 2 * gap}px`;
+    }
+  }
   const close = (e: Event) => {
     if (!menu.contains(e.target as Node)) {
       menu.remove();

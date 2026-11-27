@@ -277,3 +277,26 @@ body { grid-template-columns: minmax(0, 1fr); }
   body.side-collapsed .workspace { grid-template-columns: minmax(0, 1fr); }
   body.side-collapsed .side { display: none; }
 }
+/* toolbar pop-up menus never run off the screen (they are also placed to fit, in main.ts) */
+.cmd-menu { max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; }
+.cmd-menu button { white-space: normal; text-align: left; }
+
+/* mid-size screens (small laptops, tablets): the full top bar does not fit, so keep every label on
+   one line and drop the words that the icons already say */
+.topbar button, .topbar .menu-trigger, .tempo { white-space: nowrap; }
+@media (min-width: 821px) and (max-width: 1180px) {
+  .topbar { gap: 8px; padding-left: 10px; padding-right: 10px; }
+  .topbar .brand { font-size: 0; gap: 0; }
+  .file-actions button, .right-actions > button, .topbar .menu-trigger { padding-left: 7px; padding-right: 7px; }
+  .transport { gap: 6px; }
+  .tempo { font-size: 0; }
+  .tempo::before { content: '♩'; font-size: 15px; margin-right: 3px; }
+  .tempo input { width: 56px; font-size: 14px; }
+  .cloud-status { display: none; }
+}
+@media (min-width: 821px) and (max-width: 960px) {
+  /* not enough room for every button: the rest go in the ⋯ menu, as on phones */
+  .right-actions > button[data-cmd], #midiBtn, #recBtn, .mic-btn { display: none !important; }
+  #moreBtn.phone-only { display: inline-flex !important; }
+}
+
