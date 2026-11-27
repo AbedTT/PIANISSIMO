@@ -9,8 +9,11 @@ and keeps serving until you press Ctrl+C.
 
     pianissimo [score files...]
 
-"Scan a page" reads sheet music with Audiveris (https://audiveris.github.io), when it is installed:
-PIANISSIMO_AUDIVERIS, "audiveris=" in settings.ini, the Audiveris app on macOS or `audiveris` on the PATH.
+"Scan a page" reads sheet music with Audiveris (https://audiveris.github.io). "Set up the scanner" in the
+app downloads it (the pinned release in scanner.json, checked against its SHA-256) into the data folder,
+without administrator rights: from its .dmg on macOS, its .deb on Linux (x86_64). A separately installed
+Audiveris is found too: PIANISSIMO_AUDIVERIS, "audiveris=" in settings.ini, the Audiveris app on macOS or
+`audiveris` on the PATH.
 
 /server/* goes to the online server from settings.ini ("server=https://..."), or PIANISSIMO_SERVER,
 if one is set; otherwise the app works locally. Mirrors desktop/windows/Launcher.cs.
@@ -26,7 +29,10 @@ import re
 import secrets
 import shutil
 import subprocess
+import hashlib
+import io
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -87,6 +93,25 @@ def read_server():
 SCAN_MAX_BYTES = 30 * 1024 * 1024
 SCAN_TIME_LIMIT = 300
 SCAN_LOCK = threading.Lock()
+# Audiveris settings: by default a short line of music (one or two bars) is not taken for a staff and its
+# bars are lost; 10 staff spaces still keeps out stray lines (see desktop/windows/Scanner.cs)
+SCAN_TUNING = ["-constant", "org.audiveris.omr.sheet.grid.LinesRetriever.minStaffLength=10"]
+SCANNER_DIR = os.path.join(DATA_DIR, "scanner")
+
+
+def own_scanner():
+    """The Audiveris that "Set up the scanner" put in the data folder, or None."""
+    if MAC:
+        exe = os.path.join(SCANNER_DIR, "Audiveris.app", "Contents", "MacOS", "Audiveris")
+    else:
+        exe = os.path.join(SCANNER_DIR, "audiveris", "bin", "Audiveris")
+    return exe if os.path.isfile(exe) and os.access(exe, os.X_OK) else None
+
+
+def ocr_folder():
+    """The text-reading data (titles, lyrics) Pianissimo set up next to its scanner, or None."""
+    folder = os.path.join(SCANNER_DIR, "tessdata")
+    return folder if os.path.isfile(os.path.join(folder, "eng.traineddata")) else None
 
 
 class ScanError(Exception):
@@ -96,7 +121,7 @@ class ScanError(Exception):
 
 
 def find_audiveris():
-    candidates = [os.environ.get("PIANISSIMO_AUDIVERIS", ""), read_setting("audiveris")]
+    candidates = [own_scanner() or "", os.environ.get("PIANISSIMO_AUDIVERIS", ""), read_setting("audiveris")]
     if MAC:
         for base in ("/Applications", os.path.expanduser("~/Applications")):
             candidates.append(os.path.join(base, "Audiveris.app", "Contents", "MacOS", "Audiveris"))
@@ -142,7 +167,10 @@ def scan(data, file_name):
         with open(page, "wb") as f:
             f.write(data)
         try:
-            subprocess.run([exe, "-batch", "-export", "-output", out, page], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=SCAN_TIME_LIMIT)
+            env = dict(os.environ)
+            if ocr_folder():
+                env["TESSDATA_PREFIX"] = ocr_folder()
+            subprocess.run([exe, "-batch", *SCAN_TUNING, "-export", "-output", out, page], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=SCAN_TIME_LIMIT, env=env)
         except subprocess.TimeoutExpired:
             raise ScanError(504, "Reading the music took too long. Try one page at a time.")
         music = book = None
@@ -156,14 +184,18 @@ def scan(data, file_name):
         if not music:
             raise ScanError(422, "No music could be recognised on that page. Try a straighter, sharper scan or photo.")
         with open(music, "rb") as f:
-            result = {"format": "mxl" if music.lower().endswith(".mxl") else "musicxml", "data": base64.b64encode(f.read()).decode(), "pages": []}
+            result = {"format": "mxl" if music.lower().endswith(".mxl") else "musicxml", "data": base64.b64encode(f.read()).decode(), "pages": [], "sheets": []}
         if book:
             try:
                 with zipfile.ZipFile(book) as z:
-                    sheets = sorted(
-                        (int(m.group(1)), n) for n in z.namelist() for m in [re.match(r"^sheet#(\d+)/BINARY\.png$", n)] if m
-                    )
-                    result["pages"] = [base64.b64encode(z.read(n)).decode() for _, n in sheets]
+                    def from_book(pattern):
+                        found = sorted((int(m.group(1)), n) for n in z.namelist() for m in [re.match(pattern, n)] if m)
+                        return [base64.b64encode(z.read(n)).decode() for _, n in found]
+
+                    result["pages"] = from_book(r"^sheet#(\d+)/BINARY\.png$")
+                    # where each bar is on the pictures (the editor follows the cursor on the page)
+                    sheets = from_book(r"^sheet#(\d+)/sheet#\d+\.xml$")
+                    result["sheets"] = sheets if len(sheets) == len(result["pages"]) else []
             except (OSError, zipfile.BadZipFile):
                 pass
         return result
@@ -184,6 +216,199 @@ def register(path):
 def app_url(import_path=None):
     url = "http://127.0.0.1:%d/app.html" % PORT
     return url + "?file=" + urllib.parse.quote(import_path, safe="") if import_path else url
+
+
+# ------------------------------------------------------------------ setting up the scanner ("Set up the scanner")
+SETUP = {"state": "idle", "percent": 0, "message": ""}
+SETUP_LOCK = threading.Lock()
+
+
+def scanner_pins():
+    """The downloads for this computer, from scanner.json next to this script: {"main": …, "ocr": …} or None."""
+    try:
+        with open(os.path.join(HERE, "scanner.json"), encoding="utf-8") as f:
+            pins = json.load(f)
+    except (OSError, ValueError):
+        return None
+    machine = platform.machine().lower()
+    if MAC:
+        key = "macArm64" if machine in ("arm64", "aarch64") else "macX64"
+    elif platform.system() == "Linux" and machine in ("x86_64", "amd64"):
+        key = "linuxX64"
+    else:
+        return None
+    main = pins.get(key) or {}
+    if not str(main.get("url", "")).startswith("https://") or len(main.get("sha256", "")) != 64:
+        return None
+    ocr = pins.get("ocr") or {}
+    return {"main": main, "ocr": ocr if str(ocr.get("url", "")).startswith("https://") else None}
+
+
+def setup_megabytes():
+    """What "Set up the scanner" still has to download, in MB."""
+    pins = scanner_pins()
+    if not pins:
+        return 0
+    size = 0 if own_scanner() else pins["main"]["bytes"]
+    if pins["ocr"] and not ocr_folder():
+        size += pins["ocr"]["bytes"]
+    return round(size / 1048576)
+
+
+def download(pin, dest, report, done, total):
+    """Fetch pin["url"] into dest, checking its size and SHA-256."""
+    req = urllib.request.Request(pin["url"], headers={"User-Agent": "Pianissimo/" + read_version()})
+    sha = hashlib.sha256()
+    have = 0
+    with urllib.request.urlopen(req, timeout=60) as res, open(dest, "wb") as out:
+        while True:
+            chunk = res.read(1 << 16)
+            if not chunk:
+                break
+            out.write(chunk)
+            sha.update(chunk)
+            have += len(chunk)
+            if have > pin["bytes"]:
+                raise ScanError(502, "The scanner download is larger than expected.")
+            report(int((done + have) * 90 / max(1, total)), "download")
+    if have != pin["bytes"]:
+        raise ScanError(502, "The scanner download was cut short. Check your internet connection and try again.")
+    if sha.hexdigest() != pin["sha256"].lower():
+        raise ScanError(502, "The scanner download did not match its checksum, so it was not used.")
+
+
+def safe_extract(archive, dest):
+    """Unpack a tar archive into dest, refusing paths that would leave it."""
+    root = os.path.realpath(dest)
+    if hasattr(tarfile, "data_filter"):
+        archive.extractall(dest, filter="data")
+        return
+    for m in archive.getmembers():
+        target = os.path.realpath(os.path.join(dest, m.name))
+        link = (m.issym() or m.islnk()) and (os.path.isabs(m.linkname) or ".." in m.linkname.split("/"))
+        if not (target + os.sep).startswith(root + os.sep) or link:
+            raise ScanError(502, "The scanner download contains unexpected files.")
+    archive.extractall(dest)
+
+
+def unpack_deb(deb, work):
+    """The files of a .deb (an ar archive holding data.tar.*) into work/; returns work/opt/audiveris."""
+    with open(deb, "rb") as f:
+        data = f.read()
+    if data[:8] != b"!<arch>\n":
+        raise ScanError(502, "The scanner download is not a Debian package.")
+    i, member, payload = 8, None, None
+    while i + 60 <= len(data):
+        name = data[i:i + 16].decode("ascii", "replace").strip().rstrip("/")
+        size = int(data[i + 48:i + 58])
+        if name.startswith("data.tar"):
+            member, payload = name, data[i + 60:i + 60 + size]
+            break
+        i += 60 + size + (size % 2)
+    if not member:
+        raise ScanError(502, "The scanner download has no files in it.")
+    out = os.path.join(work, "files")
+    os.makedirs(out, exist_ok=True)
+    try:
+        mode = "r:zst" if member.endswith(".zst") else "r:*"
+        with tarfile.open(fileobj=io.BytesIO(payload), mode=mode) as t:
+            safe_extract(t, out)
+    except (tarfile.TarError, ValueError):
+        # Python before 3.14 cannot read zstd: let the system unpack it
+        tar = os.path.join(work, member)
+        with open(tar, "wb") as f:
+            f.write(payload)
+        if shutil.which("dpkg-deb"):
+            subprocess.run(["dpkg-deb", "-x", deb, out], check=True, timeout=600)
+        elif shutil.which("tar") and shutil.which("zstd"):
+            subprocess.run(["tar", "--zstd", "-xf", tar, "-C", out], check=True, timeout=600)
+        else:
+            raise ScanError(502, "Unpacking the scanner needs the zstd tool (for example: sudo apt install zstd).")
+    folder = os.path.join(out, "opt", "audiveris")
+    if not os.path.isfile(os.path.join(folder, "bin", "Audiveris")):
+        raise ScanError(502, "The scanner was unpacked, but Audiveris is missing.")
+    return folder
+
+
+def unpack_dmg(dmg, work):
+    """Audiveris.app from a .dmg (macOS): mount it read-only, copy the app, unmount."""
+    mount = os.path.join(work, "mnt")
+    os.makedirs(mount)
+    subprocess.run(["hdiutil", "attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", mount, dmg],
+                   check=True, stdout=subprocess.DEVNULL, timeout=300)
+    try:
+        apps = [n for n in os.listdir(mount) if n.endswith(".app")]
+        if not apps:
+            raise ScanError(502, "The scanner download has no app in it.")
+        target = os.path.join(work, "Audiveris.app")
+        subprocess.run(["ditto", os.path.join(mount, apps[0]), target], check=True, timeout=600)
+        return target
+    finally:
+        subprocess.run(["hdiutil", "detach", mount, "-force"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+
+
+def install_scanner(report):
+    """Download and unpack what is missing: Audiveris and/or its text-reading data."""
+    pins = scanner_pins()
+    if not pins:
+        raise ScanError(501, "This copy of Pianissimo cannot set up the scanner on this computer.")
+    need_main = own_scanner() is None
+    need_ocr = bool(pins["ocr"]) and not ocr_folder()
+    total = (pins["main"]["bytes"] if need_main else 0) + (pins["ocr"]["bytes"] if need_ocr else 0)
+    work = tempfile.mkdtemp(prefix="pianissimo-scanner-")
+    try:
+        done = 0
+        if need_main:
+            file = os.path.join(work, "audiveris.dmg" if MAC else "audiveris.deb")
+            download(pins["main"], file, report, done, total)
+            done += pins["main"]["bytes"]
+            report(int(done * 90 / max(1, total)), "unpack")
+            unpacked = unpack_dmg(file, work) if MAC else unpack_deb(file, work)
+            fresh = SCANNER_DIR + ".new"
+            shutil.rmtree(fresh, ignore_errors=True)
+            os.makedirs(fresh)
+            shutil.move(unpacked, os.path.join(fresh, "Audiveris.app" if MAC else "audiveris"))
+            # text-reading data already there stays
+            if os.path.isdir(os.path.join(SCANNER_DIR, "tessdata")):
+                shutil.move(os.path.join(SCANNER_DIR, "tessdata"), os.path.join(fresh, "tessdata"))
+            with open(os.path.join(fresh, "VERSION"), "w", encoding="utf-8") as f:
+                f.write(json.load(open(os.path.join(HERE, "scanner.json"), encoding="utf-8")).get("version", "") + "\n")
+            shutil.rmtree(SCANNER_DIR, ignore_errors=True)
+            os.replace(fresh, SCANNER_DIR)
+        if need_ocr:
+            file = os.path.join(work, "eng.traineddata")
+            download(pins["ocr"], file, report, done, total)
+            folder = os.path.join(SCANNER_DIR, "tessdata")
+            os.makedirs(folder, exist_ok=True)
+            shutil.move(file, os.path.join(folder, "eng.traineddata"))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def start_setup():
+    with SETUP_LOCK:
+        if SETUP["state"] == "working":
+            return
+        SETUP.update(state="working", percent=0, message="Starting…")
+
+    def report(percent, what):
+        with SETUP_LOCK:
+            SETUP["percent"] = max(0, min(100, percent))
+            SETUP["message"] = what
+
+    def run():
+        try:
+            install_scanner(report)
+            with SETUP_LOCK:
+                SETUP.update(state="done", percent=100, message="The music scanner is ready.")
+        except ScanError as err:
+            with SETUP_LOCK:
+                SETUP.update(state="error", message=str(err))
+        except (OSError, urllib.error.URLError, subprocess.SubprocessError):
+            with SETUP_LOCK:
+                SETUP.update(state="error", message="The scanner could not be downloaded. Check your internet connection and try again.")
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -223,8 +448,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send(200, b"ok")
         if path == "/__desktop.json":
             # tells the app it runs as the desktop app, so it checks for new releases (and offers the download)
-            info = {"platform": "macos" if MAC else "linux", "version": read_version(), "canInstall": False, "scan": bool(find_audiveris())}
+            info = {
+                "platform": "macos" if MAC else "linux", "version": read_version(), "canInstall": False,
+                "scan": bool(find_audiveris()), "scannerSetup": bool(scanner_pins()), "scannerOcr": bool(ocr_folder()),
+                "scannerMegabytes": setup_megabytes(),
+            }
             return self.send(200, json.dumps(info).encode(), "application/json", [("Cache-Control", "no-store")], self.command == "HEAD")
+        if path == "/__desktop/scanner/setup":
+            # "Set up the scanner": POST (our own page only) starts it, GET says how far it is
+            if self.command == "POST":
+                origin = self.headers.get("Origin")
+                ours = origin in ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)
+                if self.headers.get("X-Pianissimo-Desktop") != "1" or not ours or not scanner_pins():
+                    return self.send(403, b"Forbidden")
+                start_setup()
+            with SETUP_LOCK:
+                body = json.dumps(SETUP).encode()
+            return self.send(200, body, "application/json", [("Cache-Control", "no-store")])
         if path == "/__desktop/scan":
             # "Scan a page": only from our own page (custom header + our Origin), the file is the body
             origin = self.headers.get("Origin")
@@ -357,11 +597,41 @@ def hand_over(files, browser):
     return True
 
 
+def setup_from_terminal():
+    """pianissimo.py --setup-scanner (install.sh runs it): set up the music scanner, showing progress."""
+    if not scanner_pins():
+        print("The music scanner cannot be set up automatically on this computer.")
+        return 1
+    if not setup_megabytes():
+        print("The music scanner is already set up.")
+        return 0
+    print("Setting up the music scanner (about %d MB)…" % setup_megabytes())
+    last = [-1]
+
+    def report(percent, what):
+        if percent // 5 != last[0]:
+            last[0] = percent // 5
+            print("  %s %d%%" % ("unpacking" if what == "unpack" else "downloading", percent), flush=True)
+
+    try:
+        install_scanner(report)
+    except ScanError as err:
+        print("Not set up: %s" % err)
+        return 1
+    except (OSError, urllib.error.URLError, subprocess.SubprocessError) as err:
+        print("Not set up: the download failed (%s). Check your internet connection." % err)
+        return 1
+    print("The music scanner is ready: in Pianissimo, use Import > Scan a page.")
+    return 0
+
+
 def main():
     global PORT
+    os.makedirs(DATA_DIR, exist_ok=True)
+    if "--setup-scanner" in sys.argv[1:]:
+        sys.exit(setup_from_terminal())
     if not os.path.isfile(os.path.join(APP_DIR, "app.html")):
         sys.exit("Pianissimo: the app files are missing (%s). Please reinstall." % APP_DIR)
-    os.makedirs(DATA_DIR, exist_ok=True)
     files = [os.path.abspath(a) for a in sys.argv[1:] if os.path.isfile(a)]
     browser = find_browser()
     if hand_over(files, browser):

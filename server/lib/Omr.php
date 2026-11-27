@@ -68,7 +68,16 @@ final class Omr
                 throw new HttpError(422, 'No music could be recognised on that page. Try a straighter, sharper photo.');
             }
             $format = str_ends_with(strtolower($result), '.mxl') ? 'mxl' : 'musicxml';
-            return ['format' => $format, 'data' => base64_encode((string) file_get_contents($result)), 'pages' => $this->pages($dir . DIRECTORY_SEPARATOR . 'out')];
+            $out = $dir . DIRECTORY_SEPARATOR . 'out';
+            $pages = $this->fromBook($out, '~^sheet#(\d+)/BINARY\.png$~');
+            $sheets = $this->fromBook($out, '~^sheet#(\d+)/sheet#\d+\.xml$~');
+            return [
+                'format' => $format,
+                'data' => base64_encode((string) file_get_contents($result)),
+                'pages' => $pages,
+                // where each bar is on the pictures (the editor follows the cursor on the page)
+                'sheets' => count($sheets) === count($pages) ? $sheets : [],
+            ];
         } finally {
             self::remove($dir);
         }
@@ -115,8 +124,8 @@ final class Omr
         return null;
     }
 
-    /** Audiveris's picture of each page: sheet#1/BINARY.png, … inside its .omr file (a zip). */
-    private function pages(string $dir): array
+    /** One file per page from Audiveris's .omr file (a zip), base64, in page order: its picture or its description. */
+    private function fromBook(string $dir, string $pattern): array
     {
         if (!class_exists(\ZipArchive::class)) {
             return [];
@@ -133,7 +142,7 @@ final class Omr
             $pages = [];
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $stat = $zip->statIndex($i);
-                if ($stat && preg_match('~^sheet#(\d+)/BINARY\.png$~', $stat['name'], $m) && $stat['size'] <= 20 * 1024 * 1024) {
+                if ($stat && preg_match($pattern, $stat['name'], $m) && $stat['size'] <= 20 * 1024 * 1024) {
                     $pages[(int) $m[1]] = base64_encode((string) $zip->getFromIndex($i));
                 }
             }

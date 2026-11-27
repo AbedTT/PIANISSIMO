@@ -560,7 +560,13 @@ button.primary.small, .primary.small { padding: 6px 12px; }
 .page-nav, .page-zoom { display: inline-flex; align-items: center; gap: 4px; }
 .page-count { font-variant-numeric: tabular-nums; color: var(--muted); }
 .page-body { flex: 1; overflow: auto; background: var(--bg); }
-.page-body img { display: block; max-width: none; height: auto; background: #fff; }
+.page-sheet { position: relative; margin: 0 0 12px; }
+.page-sheet img { display: block; width: 100%; max-width: none; height: auto; background: #fff; }
+.page-panel.has-bars .page-sheet img { cursor: pointer; }
+.page-bar-mark { position: absolute; border: 2px solid var(--accent); background: var(--accent-soft); border-radius: 4px; pointer-events: none; transition: left .15s, top .15s, width .15s, height .15s; }
+.page-panel:not(.has-bars) .page-follow { display: none; }
+.page-follow.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent) !important; }
+@media (prefers-reduced-motion: reduce) { .page-bar-mark { transition: none; } }
 .page-resize { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
 .page-resize:hover, .page-resize:focus-visible { background: var(--accent-soft); outline: none; }
 @media (min-width: 821px) {
@@ -580,3 +586,6 @@ button.primary.small, .primary.small { padding: 6px 12px; }
 .scanner-progress progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .scan-manual { margin-top: 10px; font-size: 13px; }
 .scan-manual summary { cursor: pointer; color: var(--accent); margin-bottom: 8px; }
+.scan-ocr { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 0; margin: 0 0 12px; }
+.scan-ocr .form-actions { margin: 4px 0 10px; }
+.new-form .audio-drift { grid-column: span 2; flex-direction: row; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; }

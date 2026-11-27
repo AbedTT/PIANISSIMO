@@ -7,6 +7,8 @@ export interface ScanResult {
   format: 'mxl' | 'musicxml';
   data: string;
   pages?: string[];
+  /** Audiveris's description of each page (base64 XML): where every bar is on the pictures. */
+  sheets?: string[];
 }
 
 export const AUDIVERIS_DOWNLOAD = 'https://github.com/Audiveris/audiveris/releases/latest';
@@ -29,12 +31,12 @@ export async function scanOnDesktop(file: File, signal?: AbortSignal): Promise<S
   return body.result;
 }
 
-type Where = { kind: 'desktop' } | { kind: 'server' } | { kind: 'none'; desktop: DesktopInfo | null };
+type Where = { kind: 'desktop'; desktop: DesktopInfo } | { kind: 'server' } | { kind: 'none'; desktop: DesktopInfo | null };
 
 /** Where scanning can happen: Audiveris in the desktop app, the site's server, or nowhere yet. */
 async function findScanner(): Promise<Where> {
   const desktop = await desktopInfo();
-  if (desktop?.scan) return { kind: 'desktop' };
+  if (desktop?.scan) return { kind: 'desktop', desktop };
   const server = await api.omrAvailable().then(
     (r) => r.available,
     () => false,
@@ -79,6 +81,15 @@ export class ScanDialog {
             <span>or drop it here</span>
           </label>
           <p class="form-error" data-error hidden></p>
+          <div class="scan-ocr" data-ocr hidden>
+            <p class="hint">Titles and lyrics are not read yet: the scanner needs its text reading (a one-time download).</p>
+            <div class="scanner-progress" data-progress hidden>
+              <progress max="100" value="0"></progress>
+              <span data-progress-text></span>
+            </div>
+            <p class="form-error" data-setup-error hidden></p>
+            <div class="form-actions"><button type="button" data-setup-button data-act="ocrsetup">Add text reading</button></div>
+          </div>
           <ul class="scan-tips">
             <li>Printed music works best: a PDF, or a straight, sharp photo of one page in good light.</li>
             <li>Handwritten music is not recognised well.</li>
@@ -100,7 +111,7 @@ export class ScanDialog {
                 <span data-progress-text></span>
               </div>
               <p class="form-error" data-setup-error hidden></p>
-              <div class="form-actions"><button type="button" class="primary" data-act="autosetup">Set up the scanner</button></div>
+              <div class="form-actions"><button type="button" class="primary" data-setup-button data-act="autosetup">Set up the scanner</button></div>
             </div>
             <details class="scan-manual" data-manual>
             <summary>Or install Audiveris yourself</summary>
@@ -158,7 +169,8 @@ export class ScanDialog {
         void this.open();
       }),
     );
-    this.el.querySelector('[data-act=autosetup]')!.addEventListener('click', () => void this.setUpScanner(true));
+    this.el.querySelector('[data-act=autosetup]')!.addEventListener('click', () => void this.setUpScanner(true, this.autoBox));
+    this.el.querySelector('[data-act=ocrsetup]')!.addEventListener('click', () => void this.setUpScanner(true, this.ocrBox));
     this.el.querySelector('[data-act=cancel]')!.addEventListener('click', () => this.cancel());
     this.el.querySelector('[data-close]')!.addEventListener('click', () => this.cancel());
   }
@@ -197,26 +209,40 @@ export class ScanDialog {
           '{mb}',
           String(desktop.scannerMegabytes ?? 85),
         );
-        void this.setUpScanner(false); // already running (the dialog was closed meanwhile)? Show how far
+        void this.setUpScanner(false, this.autoBox); // already running (the dialog was closed meanwhile)? Show how far
       }
       return;
     }
     this.step('pick');
     this.error('');
+    // the scanner is there but cannot read words yet (set up by Pianissimo 0.5.1): offer its text reading
+    const desktop = where.kind === 'desktop' ? where.desktop : null;
+    const needOcr = !!desktop?.scannerSetup && desktop.scannerOcr === false;
+    this.ocrBox.hidden = !needOcr;
+    if (needOcr) void this.setUpScanner(false, this.ocrBox);
     if (file) void this.scan(file);
     else (this.el.querySelector('.drop-zone') as HTMLElement).focus();
   }
 
+  private get autoBox() {
+    return this.el.querySelector<HTMLElement>('[data-auto]')!;
+  }
+
+  private get ocrBox() {
+    return this.el.querySelector<HTMLElement>('[data-ocr]')!;
+  }
+
   /**
-   * "Set up the scanner": the launcher downloads Audiveris and unpacks it next to Pianissimo. With
-   * start = false only show the progress of a setup that is already running.
+   * "Set up the scanner" (or "Add text reading"): the launcher downloads what is missing (Audiveris,
+   * its text-reading data) next to Pianissimo. With start = false only show the progress of a setup
+   * that is already running. `scope` is the part of the dialog that shows it.
    */
-  private async setUpScanner(start: boolean) {
-    const box = this.el.querySelector<HTMLElement>('[data-progress]')!;
+  private async setUpScanner(start: boolean, scope: HTMLElement) {
+    const box = scope.querySelector<HTMLElement>('[data-progress]')!;
     const bar = box.querySelector('progress')!;
-    const label = this.el.querySelector<HTMLElement>('[data-progress-text]')!;
-    const error = this.el.querySelector<HTMLElement>('[data-setup-error]')!;
-    const button = this.el.querySelector<HTMLButtonElement>('[data-act=autosetup]')!;
+    const label = scope.querySelector<HTMLElement>('[data-progress-text]')!;
+    const error = scope.querySelector<HTMLElement>('[data-setup-error]')!;
+    const button = scope.querySelector<HTMLButtonElement>('[data-setup-button]')!;
     type Status = { state: 'idle' | 'working' | 'done' | 'error'; percent: number; message: string };
     const ask = async (method: 'GET' | 'POST'): Promise<Status> => {
       const res = await fetch('/__desktop/scanner/setup', { method, headers: method === 'POST' ? { 'X-Pianissimo-Desktop': '1' } : {} });

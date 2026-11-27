@@ -11,6 +11,9 @@ import {
   estimateKey,
   estimateTempo,
   melodyNotes,
+  scaleBeats,
+  tempoSpread,
+  trackBeats,
   type AudioNote,
 } from './transcribe';
 
@@ -36,6 +39,8 @@ export class AudioDialog {
   private beat = 0;
   /** The tempo found, unrounded (100 shown for 99.6 would drift by a beat over a few minutes). */
   private bpm = 100;
+  /** Every beat of the performance, followed through tempo changes. */
+  private tracked: number[] = [];
   private fileName = '';
   private cancelled = false;
 
@@ -86,6 +91,7 @@ export class AudioDialog {
           <label>Title <input name="title" /></label>
           <label>Instrument <select name="sound"></select></label>
           <label>Tempo <input name="bpm" type="number" min="30" max="300" step="1" /></label>
+          <label class="audio-drift"><input type="checkbox" name="drift" /> <span>The tempo changes (a live performance without a click)</span></label>
           <label>Time <select name="time">${TIMES.map((x) => `<option>${x}</option>`).join('')}</select></label>
           <label>First note on beat <select name="firstBeat"></select></label>
           <label>Key <select name="key">${keyOptions}</select></label>
@@ -146,6 +152,7 @@ export class AudioDialog {
       time: HTMLSelectElement;
       firstBeat: HTMLSelectElement;
       key: HTMLSelectElement;
+      drift: HTMLInputElement;
     };
   }
 
@@ -214,7 +221,10 @@ export class AudioDialog {
     const { bpm, beat } = estimateTempo(notes);
     this.beat = beat;
     this.bpm = bpm;
+    this.tracked = trackBeats(notes, bpm);
     const form = this.form;
+    // a performance that clearly speeds up or slows down (more than 8 % between its quick and slow parts)
+    form.drift.checked = tempoSpread(this.tracked) > 1.08;
     form.title.value = this.fileName.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim() || t('Recording');
     const sounds = mode === 'chords' ? CHORD_SOUNDS : MELODY_SOUNDS;
     form.sound.innerHTML = sounds.map((id) => `<option value="${id}">${t(NAMES[id] ?? soundById(id).name)}</option>`).join('');
@@ -244,11 +254,20 @@ export class AudioDialog {
     const typed = Math.max(30, Math.min(300, Number(form.bpm.value) || 100));
     // the tempo found (or exactly double it) keeps its beat; another tempo counts from the first note
     const ratio = [1, 2].find((r) => Math.abs(typed - Math.round(this.bpm * r)) < 0.5);
-    const bpm = ratio ? this.bpm * ratio : typed;
+    let bpm = ratio ? this.bpm * ratio : typed;
+    // a changing tempo: the tracked beats (or twice as many, or half), and their usual tempo for the score
+    let beatTimes: number[] | undefined;
+    const driftRatio = [1, 2, 0.5].find((r) => Math.abs(typed - Math.round(this.bpm * r)) < 0.5);
+    if (form.drift.checked && driftRatio && this.tracked.length >= 4) {
+      beatTimes = scaleBeats(this.tracked, driftRatio);
+      const periods = beatTimes.slice(1).map((b, i) => b - beatTimes![i]).sort((a, b) => a - b);
+      bpm = 60 / periods[Math.floor(periods.length / 2)];
+    }
     try {
       const score = audioToScore(this.notes, {
         title: form.title.value.trim() || t('Recording'),
         bpm,
+        beatTimes,
         beat: ratio ? this.beat : this.notes[0].start,
         firstBeat: Number(form.firstBeat.value) || 1,
         beats,

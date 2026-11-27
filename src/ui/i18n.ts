@@ -46,6 +46,11 @@ const TABLE: [string, string, string, string][] = [
   ['Downloading…', 'Téléchargement…', 'Descargando…', 'Wird heruntergeladen…'],
   ['No release notes.', 'Pas de notes de version.', 'Sin notas de la versión.', 'Keine Versionshinweise.'],
   ['Installing the update: Pianissimo closes and opens again in a moment. Your scores are kept.', 'Installation de la mise à jour : Pianissimo se ferme et se rouvre dans un instant. Vos partitions sont conservées.', 'Instalando la actualización: Pianissimo se cierra y se vuelve a abrir en un momento. Tus partituras se conservan.', 'Das Update wird installiert: Pianissimo schließt sich und öffnet sich gleich wieder. Ihre Partituren bleiben erhalten.'],
+  // better scans: text reading, the page following the cursor (0.6.0)
+  ['Titles and lyrics are not read yet: the scanner needs its text reading (a one-time download).', 'Les titres et paroles ne sont pas encore lus : le lecteur de partitions a besoin de sa lecture de texte (un téléchargement unique).', 'Los títulos y la letra aún no se leen: el escáner necesita su lectura de texto (una sola descarga).', 'Titel und Liedtexte werden noch nicht gelesen: der Scanner braucht seine Texterkennung (einmaliger Download).'],
+  ['Add text reading', 'Ajouter la lecture de texte', 'Añadir la lectura de texto', 'Texterkennung hinzufügen'],
+  ['Follow the cursor on the page', 'Suivre le curseur sur la page', 'Seguir el cursor en la página', 'Dem Cursor auf der Seite folgen'],
+  ['The tempo changes (a live performance without a click)', 'Le tempo change (un enregistrement en direct, sans métronome)', 'El tempo cambia (una interpretación en vivo, sin metrónomo)', 'Das Tempo ändert sich (eine Live-Aufnahme ohne Klick)'],
   // updates and setting up the scanner (0.5.1)
   ['Checking for updates…', 'Recherche de mises à jour…', 'Buscando actualizaciones…', 'Suche nach Updates…'],
   ['✓ Pianissimo is up to date: you have the latest version ({version}).', '✓ Pianissimo est à jour : vous avez la dernière version ({version}).', '✓ Pianissimo está al día: tienes la última versión ({version}).', '✓ Pianissimo ist aktuell: Sie haben die neueste Version ({version}).'],

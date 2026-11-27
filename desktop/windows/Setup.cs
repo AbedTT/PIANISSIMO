@@ -44,7 +44,7 @@ namespace Pianissimo
                 try
                 {
                     Install(true, serverArg, null);
-                    if (!noScanner && ScannerSetup.Possible && ScannerSetup.FindIn(Common.InstallDir) == null)
+                    if (!noScanner && ScannerSetup.Possible && ScannerSetup.DownloadMegabytes(Common.InstallDir) > 0)
                     {
                         // Pianissimo works without it: a failed download is not a failed install
                         try { ScannerSetup.Install(Common.InstallDir, null); } catch (Exception) { }
@@ -195,7 +195,8 @@ namespace Pianissimo
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleMode = AutoScaleMode.Font;
             int extra = update ? 40 : 0; // room for the "update" sentence
-            bool hasScanner = ScannerSetup.FindIn(Common.InstallDir) != null;
+            // complete = Audiveris and its text-reading data (0.5.1 set up Audiveris alone)
+            bool hasScanner = ScannerSetup.DownloadMegabytes(Common.InstallDir) == 0;
             bool offerScanner = ScannerSetup.Possible;
             int room = (offerScanner ? 48 : 0) + 24; // room for the music scanner, and for the folder line
             ClientSize = new Size(520, 410 + extra + room);
@@ -242,7 +243,7 @@ namespace Pianissimo
                 scanner.Enabled = !hasScanner;
                 scanner.Bounds = new Rectangle(28, y + 56, 470, 24);
                 Controls.Add(scanner);
-                scannerNote.Text = hasScanner ? "Already set up." : "Audiveris, free. Downloads " + ScannerSetup.DownloadMegabytes + " MB once.";
+                scannerNote.Text = hasScanner ? "Already set up." : "Audiveris, free, with text reading for titles and lyrics. Downloads " + ScannerSetup.DownloadMegabytes(Common.InstallDir) + " MB once.";
                 scannerNote.ForeColor = Color.FromArgb(110, 110, 115);
                 scannerNote.Bounds = new Rectangle(46, y + 80, 450, 20);
                 Controls.Add(scannerNote);
@@ -313,7 +314,7 @@ namespace Pianissimo
             primary.Enabled = cancel.Enabled = desktop.Enabled = serverBox.Enabled = scanner.Enabled = false;
             bar.Visible = true;
             bool wantDesktop = desktop.Checked;
-            bool wantScanner = scanner.Visible && scanner.Checked && ScannerSetup.FindIn(Common.InstallDir) == null;
+            bool wantScanner = scanner.Visible && scanner.Checked && ScannerSetup.DownloadMegabytes(Common.InstallDir) > 0;
             Thread worker = new Thread(delegate ()
             {
                 try
@@ -344,7 +345,7 @@ namespace Pianissimo
                     {
                         MessageBox.Show(this, "Setup could not finish:\n\n" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
                         primary.Enabled = cancel.Enabled = desktop.Enabled = serverBox.Enabled = true;
-                        scanner.Enabled = ScannerSetup.FindIn(Common.InstallDir) == null;
+                        scanner.Enabled = ScannerSetup.DownloadMegabytes(Common.InstallDir) > 0;
                         bar.Visible = false;
                     });
                 }

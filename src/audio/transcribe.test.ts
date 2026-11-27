@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { audioToScore, estimateFirstBeat, estimateKey, estimateTempo, melodyNotes, type AudioNote } from './transcribe';
+import { audioToScore, estimateFirstBeat, estimateKey, estimateTempo, melodyNotes, scaleBeats, tempoSpread, trackBeats, type AudioNote } from './transcribe';
 
 const RATE = 22050;
 
@@ -119,5 +119,56 @@ describe('recordings to notes: beat, key and the score', () => {
     // the same tune with a one-beat pickup: the first note on beat 4
     const pickup = audioToScore(notes, { title: 'Ode', bpm, beat, firstBeat: 4, beats: 4, beatType: 4, keyFifths: 1, sound: 'flute', name: 'Flute' });
     expect(pickup.measures[0].staves[0].map((e) => (e.pitches.length ? `${e.pitches[0].step}${e.pitches[0].octave}` : `r${e.type}`))).toEqual(['rh', 'rq', 'B4']);
+  });
+});
+
+describe('recordings to notes: a tempo that changes', () => {
+  /** A melody played with the tempo going from `from` to `to` beats a minute along the way. */
+  const drifting = (melody: [number, number][], from: number, to: number, lead = 0.3): AudioNote[] => {
+    const total = melody.reduce((a, [, b]) => a + b, 0);
+    // the time of beat position x: integrate the beat length, which changes evenly
+    const at = (x: number) => {
+      let t = lead;
+      const step = 1 / 32;
+      for (let y = 0; y < x - 1e-9; y += step) t += (step * 60) / (from + ((to - from) * y) / total);
+      return t;
+    };
+    let pos = 0;
+    return melody.map(([midi, beats]) => {
+      const start = at(pos);
+      const end = start + (at(pos + beats) - start) * 0.9;
+      pos += beats;
+      return { start, end, midi, velocity: 0.8 };
+    });
+  };
+  const bars = (score: ReturnType<typeof audioToScore>) =>
+    score.measures.map((m) => m.staves[0].map((e) => `${e.pitches[0] ? e.pitches[0].step + e.pitches[0].octave : 'r'}:${e.type}${'.'.repeat(e.dots)}`).join(' '));
+  const want = ['B4:q B4:q C5:q D5:q', 'D5:q C5:q B4:q A4:q', 'G4:q G4:q A4:q B4:q', 'B4:q. A4:8 A4:h'];
+  const options = { title: 'Ode', beats: 4, beatType: 4, keyFifths: 1, sound: 'flute', name: 'Flute', firstBeat: 1 };
+
+  it('a performance that speeds up from 80 to 120: one tempo loses the bar lines, the tracked beats keep them', () => {
+    const notes = drifting(ODE, 80, 120);
+    const { bpm, beat } = estimateTempo(notes);
+    expect(bars(audioToScore(notes, { ...options, bpm, beat }))).not.toEqual(want);
+    const beatTimes = trackBeats(notes, bpm);
+    expect(tempoSpread(beatTimes)).toBeGreaterThan(1.2);
+    const tracked = audioToScore(notes, { ...options, bpm, beat, beatTimes });
+    expect(bars(tracked)).toEqual(want);
+  });
+
+  it('slowing down at the end (ritardando) works the same way', () => {
+    const notes = drifting([...ODE, ...ODE], 110, 70);
+    const { bpm } = estimateTempo(notes);
+    const beatTimes = trackBeats(notes, bpm);
+    expect(bars(audioToScore(notes, { ...options, bpm, beat: notes[0].start, beatTimes }))).toEqual([...want, ...want]);
+  });
+
+  it('a steady performance is seen as steady, and halving or doubling the beats works', () => {
+    const notes = drifting(ODE, 100, 100);
+    const beatTimes = trackBeats(notes, 100);
+    expect(tempoSpread(beatTimes)).toBeLessThan(1.05);
+    expect(bars(audioToScore(notes, { ...options, bpm: 100, beat: notes[0].start, beatTimes }))).toEqual(want);
+    expect(scaleBeats([0, 1, 2], 2)).toEqual([0, 0.5, 1, 1.5, 2]);
+    expect(scaleBeats([0, 1, 2, 3, 4], 0.5)).toEqual([0, 2, 4]);
   });
 });

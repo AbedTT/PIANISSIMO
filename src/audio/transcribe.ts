@@ -299,6 +299,82 @@ export function estimateFirstBeat(notes: AudioNote[], bpm: number, beat: number,
   return best !== 0 && weight[best] > 1.5 * weight[0] ? ((beats - best) % beats) + 1 : 1;
 }
 
+// ------------------------------------------------------------------ a tempo that changes
+
+/**
+ * The time of every beat, for a performance whose tempo drifts (no click track): dynamic
+ * programming over how strongly notes start at each moment (after Ellis, "Beat tracking by dynamic
+ * programming", 2007). Each beat is placed where notes start, about one beat after the previous
+ * one. Unlike Ellis's fixed target tempo, a beat is compared with the beat before it, so the tempo
+ * can drift a long way (110 to 70) as long as it changes gradually; a weak pull towards the
+ * starting estimate (`bpm`, from estimateTempo) keeps it from jumping to double or half speed.
+ */
+export function trackBeats(notes: AudioNote[], bpm: number): number[] {
+  if (notes.length < 4) return [];
+  const fps = 100;
+  const end = Math.max(...notes.map((n) => n.end)) + 1;
+  const n = Math.ceil(end * fps);
+  // how strongly notes start at each 10 ms, a little smoothed
+  const raw = new Float64Array(n);
+  for (const note of notes) {
+    const i = Math.round(note.start * fps);
+    if (i >= 0 && i < n) raw[i] += note.velocity * Math.sqrt(Math.min(2, Math.max(0.05, note.end - note.start)));
+  }
+  const env = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!raw[i]) continue;
+    for (let k = -6; k <= 6; k++) if (i + k >= 0 && i + k < n) env[i + k] += raw[i] * Math.exp(-(k * k) / 18);
+  }
+  let peak = 0;
+  for (const v of env) peak = Math.max(peak, v);
+  for (let i = 0; i < n; i++) env[i] /= peak || 1;
+
+  const period = (60 / bpm) * fps;
+  const local = 8; // cost of changing the beat length from one beat to the next
+  const anchor = 0.4; // the weak pull towards the starting tempo
+  const score = new Float64Array(n);
+  const back = new Int32Array(n).fill(-1);
+  const lo = Math.round(period / 2);
+  const hi = Math.round(period * 2);
+  for (let t = 0; t < n; t++) {
+    let best = 0;
+    let from = -1;
+    for (let tau = t - hi; tau <= t - lo; tau++) {
+      if (tau < 0) continue;
+      const gap = t - tau;
+      const before = back[tau] >= 0 ? tau - back[tau] : period;
+      const v = score[tau] - local * Math.log(gap / before) ** 2 - anchor * Math.log(gap / period) ** 2;
+      if (v > best) [best, from] = [v, tau];
+    }
+    score[t] = env[t] + best;
+    back[t] = from;
+  }
+  // the last beat: the best place near the last note's start
+  const last = Math.round(notes[notes.length - 1].start * fps);
+  let t = -1;
+  for (let i = Math.max(0, last - lo); i < Math.min(n, last + lo); i++) if (t < 0 || score[i] > score[t]) t = i;
+  const beats: number[] = [];
+  while (t >= 0) {
+    beats.push(t / fps);
+    t = back[t];
+  }
+  return beats.reverse();
+}
+
+/** How much the beat length changes in a tracked performance: 1 = steady, 1.15 = 15 % between the quick and slow parts. */
+export function tempoSpread(beats: number[]): number {
+  const periods = beats.slice(1).map((b, i) => b - beats[i]).sort((a, b) => a - b);
+  if (periods.length < 6) return 1;
+  return periods[Math.floor(periods.length * 0.9)] / periods[Math.floor(periods.length * 0.1)];
+}
+
+/** Halve (ratio 2: twice as many beats) or double (0.5) the beats of a tracked performance. */
+export function scaleBeats(beats: number[], ratio: number): number[] {
+  if (ratio === 2) return beats.flatMap((b, i) => (i + 1 < beats.length ? [b, (b + beats[i + 1]) / 2] : [b]));
+  if (ratio === 0.5) return beats.filter((_, i) => i % 2 === 0);
+  return beats;
+}
+
 export interface AudioScoreOptions {
   title: string;
   /** Quarter notes per minute. */
@@ -307,6 +383,11 @@ export interface AudioScoreOptions {
   beat: number;
   /** The beat of its bar the first note falls on (1 = the first). */
   firstBeat: number;
+  /**
+   * The time of every beat (from trackBeats), for a performance whose tempo changes: notes are
+   * placed between the beats around them. Without it the tempo is steady (bpm and beat).
+   */
+  beatTimes?: number[];
   beats: number;
   beatType: number;
   keyFifths: number;
@@ -318,11 +399,27 @@ export interface AudioScoreOptions {
 export function audioToScore(notes: AudioNote[], o: AudioScoreOptions): Score {
   if (!notes.length) throw new Error('No notes were heard in this recording.');
   const beatSec = 60 / o.bpm; // a quarter note
-  const unitSec = beatSec * (4 / o.beatType); // one beat of the time signature
+  // a time as a count of beats: steady, or between the tracked beats of a changing tempo
+  const B = o.beatTimes && o.beatTimes.length >= 4 ? o.beatTimes : null;
+  const toBeat = (t: number) => {
+    if (!B) return (t - o.beat) / beatSec;
+    if (t <= B[0]) return (t - B[0]) / (B[1] - B[0]);
+    const last = B.length - 1;
+    if (t >= B[last]) return last + (t - B[last]) / (B[last] - B[last - 1]);
+    let lo = 0;
+    let hi = last;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (B[mid] <= t) lo = mid;
+      else hi = mid;
+    }
+    return lo + (t - B[lo]) / (B[lo + 1] - B[lo]);
+  };
+  const unit = 4 / o.beatType; // one beat of the time signature, in quarters
   // the beat the first note is on (a note a little early is still on it), and the bar line before it
-  const k = Math.floor((notes[0].start - o.beat) / beatSec + 1 / 8);
-  const origin = o.beat + k * beatSec - (Math.max(1, Math.min(o.beats, o.firstBeat)) - 1) * unitSec;
-  const inBeats = (t: number) => (t - origin) / beatSec;
+  const k = Math.floor(toBeat(notes[0].start) + 1 / 8);
+  const origin = k - (Math.max(1, Math.min(o.beats, o.firstBeat)) - 1) * unit;
+  const inBeats = (t: number) => toBeat(t) - origin;
   const starts = notes.map((n) => inBeats(n.start));
   const raw: RawNote[] = notes.map((n, i) => {
     const s = starts[i];
@@ -337,8 +434,8 @@ export function audioToScore(notes: AudioNote[], o: AudioScoreOptions): Score {
     }
     if (next - e < Math.max(0.3, 0.35 * (next - s))) e = next; // detached playing: the note lasts until the next one
     else {
-      // before a real rest: long notes end on a whole or half beat
-      const grid = e - s >= 2 ? 1 : e - s >= 1 ? 0.5 : 0.25;
+      // before a real rest: long notes end on a whole or half beat (a note held 90 % of a half note is a half note)
+      const grid = e - s >= 1.5 ? 1 : e - s >= 0.75 ? 0.5 : 0.25;
       e = Math.max(s + 0.25, Math.round(e / grid) * grid);
     }
     return { start: Math.max(0, Math.round(s * TPQ)), end: Math.round(e * TPQ), midi: n.midi, velocity: n.velocity };

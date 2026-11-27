@@ -3,9 +3,17 @@
  * computer next to the score in My scores, so the page can be shown beside the score whenever
  * that score is opened again. Keyed by the score's id in the library on this computer.
  */
+import type { BarBox } from '../scan/barMap';
+
+/** The pictures, and (for a scan) where each bar is on them. */
+export interface Pages {
+  pages: Blob[];
+  bars?: BarBox[];
+}
+
 export interface PageStore {
-  get(id: string): Promise<Blob[] | null>;
-  put(id: string, pages: Blob[]): Promise<void>;
+  get(id: string): Promise<Pages | null>;
+  put(id: string, value: Pages): Promise<void>;
   remove(id: string): Promise<void>;
 }
 
@@ -28,17 +36,20 @@ export function indexedDbPages(name = 'pianissimo-pages'): PageStore {
     });
   };
   return {
-    get: async (id) => ((await run('readonly', (s) => s.get(id) as IDBRequest<{ pages: Blob[] } | undefined>))?.pages ?? null),
-    put: async (id, pages) => void (await run('readwrite', (s) => s.put({ id, pages }))),
+    get: async (id) => {
+      const item = await run('readonly', (s) => s.get(id) as IDBRequest<(Pages & { id: string }) | undefined>);
+      return item?.pages?.length ? { pages: item.pages, bars: item.bars } : null;
+    },
+    put: async (id, value) => void (await run('readwrite', (s) => s.put({ id, pages: value.pages, bars: value.bars }))),
     remove: async (id) => void (await run('readwrite', (s) => s.delete(id))),
   };
 }
 
 export function memoryPages(): PageStore {
-  const items = new Map<string, Blob[]>();
+  const items = new Map<string, Pages>();
   return {
     get: async (id) => items.get(id) ?? null,
-    put: async (id, pages) => void items.set(id, pages),
+    put: async (id, value) => void items.set(id, value),
     remove: async (id) => void items.delete(id),
   };
 }

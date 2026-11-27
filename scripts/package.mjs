@@ -216,7 +216,8 @@ if (process.platform === 'win32' && csc) {
     buildInfo,
     `namespace Pianissimo { static class BuildInfo { public const string Version = "${version}"; public const string UpdateFeed = ${JSON.stringify(updateFeed)}; ` +
       `public const string AudiverisVersion = ${JSON.stringify(audiveris.version ?? '')}; public const string AudiverisUrl = ${JSON.stringify(audiveris.windowsUrl ?? '')}; ` +
-      `public const string AudiverisSha256 = ${JSON.stringify(audiveris.windowsSha256 ?? '')}; public const long AudiverisBytes = ${Number(audiveris.windowsBytes ?? 0)}; } }\n`,
+      `public const string AudiverisSha256 = ${JSON.stringify(audiveris.windowsSha256 ?? '')}; public const long AudiverisBytes = ${Number(audiveris.windowsBytes ?? 0)}; ` +
+      `public const string OcrUrl = ${JSON.stringify(audiveris.ocrUrl ?? '')}; public const string OcrSha256 = ${JSON.stringify(audiveris.ocrSha256 ?? '')}; public const long OcrBytes = ${Number(audiveris.ocrBytes ?? 0)}; } }\n`,
   );
   const compile = (out, files, extra = []) => {
     const args = [
@@ -299,6 +300,23 @@ if (process.platform === 'win32' && csc) {
       [`${dir}uninstall.sh`, readFileSync(join(unix, 'uninstall.sh')), 0o755],
       [`${dir}icon.png`, readFileSync(join(root, 'public', 'icons', 'icon-512.png'))],
       [`${dir}VERSION`, Buffer.from(`${version}\n`)],
+      // the music scanner the app can set up with one click (pinned downloads, see pianissimo.py)
+      [
+        `${dir}scanner.json`,
+        Buffer.from(
+          JSON.stringify(
+            {
+              version: audiveris.version,
+              macArm64: audiveris.macArm64,
+              macX64: audiveris.macX64,
+              linuxX64: audiveris.linuxX64,
+              ocr: { url: audiveris.ocrUrl, sha256: audiveris.ocrSha256, bytes: audiveris.ocrBytes },
+            },
+            null,
+            2,
+          ) + '\n',
+        ),
+      ],
       [`${dir}README.txt`, readme],
       ...appEntries(dir),
     ]),

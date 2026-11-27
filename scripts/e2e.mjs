@@ -10,6 +10,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_PORT = Number(process.env.E2E_PORT ?? 4180);
@@ -801,7 +802,9 @@ test(
 test('scanning in the desktop app: how to set up Audiveris, then a scan with its page kept in My scores', async (page) => {
   // the desktop app's launcher, first without Audiveris, then with it (its answer is a real Audiveris 5.11 result)
   const mxl = readFileSync(join(root, 'src/io/fixtures/audiveris-waltz.mxl')).toString('base64');
-  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+  // Audiveris's picture of that page, and its description (where each bar is on it)
+  const png = readFileSync(join(root, 'src/io/fixtures/audiveris-waltz-page.png')).toString('base64');
+  const sheet = gunzipSync(readFileSync(join(root, 'src/io/fixtures/audiveris-waltz-sheet1.xml.gz'))).toString('base64');
   await page.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `(() => {
       const real = window.fetch;
@@ -810,12 +813,12 @@ test('scanning in the desktop app: how to set up Audiveris, then a scan with its
       window.__scans = [];
       window.fetch = (input, init) => {
         const url = typeof input === 'string' ? input : input.url;
-        if (url.endsWith('/__desktop.json')) return Promise.resolve(json({ platform: 'windows', version: '0.5.0', canInstall: true, scan: window.__audiveris }));
+        if (url.endsWith('/__desktop.json')) return Promise.resolve(json({ platform: 'windows', version: '0.6.0', canInstall: true, scan: window.__audiveris, scannerSetup: false, scannerOcr: false }));
         // this desktop app has no online server that scans
         if (url.endsWith('/omr') && (!init || !init.method || init.method === 'GET')) return Promise.resolve(json({ available: false }));
         if (url.endsWith('/__desktop/scan')) {
           window.__scans.push({ headers: init.headers, size: init.body.size });
-          return Promise.resolve(json({ result: { format: 'mxl', data: '${mxl}', pages: ['${png}'] } }));
+          return Promise.resolve(json({ result: { format: 'mxl', data: '${mxl}', pages: ['${png}'], sheets: ['${sheet}'] } }));
         }
         return real(input, init);
       };
@@ -845,8 +848,22 @@ test('scanning in the desktop app: how to set up Audiveris, then a scan with its
   const scan = await page.eval(`window.__scans[0]`);
   assert(scan.headers['X-Pianissimo-Desktop'] === '1' && scan.headers['X-File-Name'] === 'Little%20waltz.pdf' && scan.size > 10, `sent to the launcher: ${JSON.stringify(scan)}`);
   const bars = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures.length`);
-  assert(bars === 7, `bars: ${bars}`);
+  assert(bars === 8, `bars: ${bars}`);
   await page.waitFor(`!document.getElementById('pagePanel').hidden && document.querySelector('#pagePanel img').naturalWidth > 0`, 'the page beside the score');
+  // the bar of the cursor is outlined on the page: bar 1 starts at x = 239 of the 2478-pixel-wide picture
+  const markLeft = `parseFloat(document.querySelector('#pagePanel .page-bar-mark')?.style.left ?? 'NaN')`;
+  await page.waitFor(`Math.abs(${markLeft} - 239 / 2478 * 100) < 0.5`, 'bar 1 outlined on the page');
+  // a click on bar 5 of the page (x 817–1306, y 1111–1461 on the picture) moves the cursor there, and the outline with it
+  await page.eval(`(() => {
+    const img = document.querySelector('#pagePanel img');
+    const r = img.getBoundingClientRect();
+    const x = r.left + (1060 / img.naturalWidth) * r.width;
+    const y = r.top + (1290 / img.naturalHeight) * r.height;
+    img.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
+    return true;
+  })()`);
+  await page.waitFor(`document.getElementById('status').textContent.includes('Bar 5')`, 'the cursor in bar 5');
+  await page.waitFor(`Math.abs(${markLeft} - 817 / 2478 * 100) < 0.5`, 'bar 5 outlined');
   assert(await page.eval(`!document.getElementById('pageBtn').hidden && document.getElementById('pageBtn').getAttribute('aria-pressed') === 'true'`), 'the Page button is on');
   await page.shot('scan-page-beside');
   // the page takes a column of the workspace, next to the score
@@ -867,6 +884,8 @@ test('scanning in the desktop app: how to set up Audiveris, then a scan with its
   assert(await page.eval(`document.getElementById('pagePanel').hidden`), 'shown when asked, not on its own');
   await page.eval(`document.getElementById('pageBtn').click()`);
   await page.waitFor(`!document.getElementById('pagePanel').hidden && document.querySelector('#pagePanel img').naturalWidth > 0`, 'the stored page');
+  // the bar positions were kept too
+  await page.waitFor(`!!document.querySelector('#pagePanel .page-bar-mark')`, 'the outline after a reload');
   // a new score has no page
   await page.goto('/app.html?template=waltz');
   await page.waitFor(`document.getElementById('title').value === 'Little waltz' && document.getElementById('pageBtn').hidden && document.getElementById('pagePanel').hidden`, 'a template has no page');
@@ -905,6 +924,22 @@ test(
       assert((await page.eval(`fetch('/__desktop.json').then((r) => r.json())`)).scan, 'the launcher finds the scanner now');
       await page.eval(`document.querySelector('#scanModal [data-close]').click(), true`);
     }
+    // a scanner without text reading (set up by 0.5.1): "Add text reading" fetches what is missing
+    const now = await page.eval(`fetch('/__desktop.json').then((r) => r.json())`);
+    if (now.scannerSetup && now.scannerOcr === false) {
+      await page.eval(`document.querySelector('.file-actions [data-cmd=scanMusic]').click(), true`);
+      await page.waitFor(`!document.querySelector('#scanModal [data-ocr]').hidden`, 'the offer to add text reading');
+      await page.shot('scanner-ocr-offer');
+      await page.eval(`document.querySelector('#scanModal [data-act=ocrsetup]').click(), true`);
+      await page.waitFor(
+        `(!document.querySelector('#scanModal [data-step=pick]').hidden && document.querySelector('#scanModal [data-ocr]').hidden) || !document.querySelector('#scanModal [data-ocr] [data-setup-error]').hidden`,
+        'text reading added',
+        600000,
+      );
+      const ocrError = await page.eval(`document.querySelector('#scanModal [data-ocr] [data-setup-error]').textContent`);
+      assert((await page.eval(`fetch('/__desktop.json').then((r) => r.json())`)).scannerOcr, `text reading set up: ${ocrError}`);
+      await page.eval(`document.querySelector('#scanModal [data-close]').click(), true`);
+    }
     await importFile(page, 'scanMusic', process.env.E2E_SCAN_PDF);
     await page.waitFor(`!document.querySelector('#scanModal [data-step=busy]').hidden`, 'reading');
     await page.waitFor(`document.getElementById('scanModal').hidden || !document.querySelector('#scanModal [data-error]').hidden`, 'Audiveris has read the page', 300000);
@@ -915,6 +950,14 @@ test(
     const bars = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures.length`);
     assert(bars > 0, 'bars were read');
     await page.waitFor(`!document.getElementById('pagePanel').hidden && document.querySelector('#pagePanel img').naturalWidth > 500`, 'the page picture from Audiveris beside the score');
+    // Audiveris said where the bars are: the cursor's bar is outlined on the page
+    await page.waitFor(`!!document.querySelector('#pagePanel .page-bar-mark')`, 'the bar outlined on the page');
+    // E2E_SCAN_LYRICS=1: the page has lyrics, read with the text-reading data
+    if (process.env.E2E_SCAN_LYRICS) {
+      const lyrics = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures.flatMap((m) => m.staves.flat()).filter((e) => e.lyric).map((e) => e.lyric.text).join(' ')`);
+      assert(lyrics.split(' ').length >= 8, `lyrics read: "${lyrics}"`);
+      console.log(`    lyrics read: ${lyrics}`);
+    }
     await settled(page);
     await page.shot('real-audiveris');
   },

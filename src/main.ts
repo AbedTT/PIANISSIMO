@@ -4,7 +4,9 @@ import { LocalLibrary } from './library/local';
 import { initUpdates } from './desktop/updateUi';
 import { ScanDialog, isScannable, type ScanResult } from './scan/scanDialog';
 import { PagePanel } from './ui/pagePanel';
-import { base64Bytes, indexedDbPages, memoryPages } from './library/pages';
+import { base64Bytes, indexedDbPages, memoryPages, type Pages } from './library/pages';
+import { liftLyrics } from './scan/scanFixes';
+import { barBoxes } from './scan/barMap';
 import { AudioDialog, isAudioFile } from './audio/audioDialog';
 import './styles.css';
 import './ios.css';
@@ -80,7 +82,7 @@ const updates = initUpdates({ toast: (m) => toast(m), beforeInstall: () => cloud
 const pagePanel = new PagePanel(document.querySelector<HTMLElement>('.workspace')!, $('sheetScroll'));
 const pageStore = typeof indexedDB !== 'undefined' ? indexedDbPages() : memoryPages();
 /** Pages shown for a score that is not saved on this computer yet (kept with it on its first save). */
-let pendingPages: Blob[] | null = null;
+let pendingPages: Pages | null = null;
 pagePanel.onChange = () => {
   const btn = $('pageBtn');
   btn.hidden = !pagePanel.hasPages;
@@ -92,12 +94,22 @@ function forgetPages() {
   pagePanel.clear();
 }
 /** Show pages for the score now in the editor; they are kept with it when it is saved on this computer. */
-function showPages(pages: Blob[]) {
-  pagePanel.set(pages);
+function showPages(value: Pages) {
+  pagePanel.set(value);
+  pagePanel.showBar(editor.cursor.m);
   const id = cloud.localId;
-  if (id) void pageStore.put(id, pages).catch(() => {});
-  else pendingPages = pages;
+  if (id) void pageStore.put(id, value).catch(() => {});
+  else pendingPages = value;
 }
+// the page follows the cursor (a scan knows where its bars are); a click on a bar of the page moves the cursor there
+pagePanel.onBarClick = (m) => {
+  if (m >= editor.score.measures.length) return;
+  editor.setCursor({ m, s: editor.cursor.s, i: 0, v: editor.cursor.v });
+  $('score').focus();
+};
+editor.subscribe((kind) => {
+  if (kind === 'cursor' || kind === 'score') pagePanel.showBar(editor.cursor.m);
+});
 cloud.onLocalLinked = (id, how) => {
   if (!id) return forgetPages();
   if (how === 'saved') {
@@ -108,13 +120,18 @@ cloud.onLocalLinked = (id, how) => {
   }
   pendingPages = null;
   void pageStore.get(id).then(
-    (pages) => (cloud.localId !== id ? undefined : pages?.length ? pagePanel.set(pages, false) : pagePanel.clear()),
+    (stored) => {
+      if (cloud.localId !== id) return;
+      if (!stored) return pagePanel.clear();
+      pagePanel.set(stored, false);
+      pagePanel.showBar(editor.cursor.m);
+    },
     () => pagePanel.clear(),
   );
 };
 cloud.onLocalRemoved = (id) => void pageStore.remove(id).catch(() => {});
 cloud.onLocalDuplicated = (from, to) =>
-  void pageStore.get(from).then((pages) => (pages?.length ? pageStore.put(to, pages) : undefined)).catch(() => {});
+  void pageStore.get(from).then((stored) => (stored ? pageStore.put(to, stored) : undefined)).catch(() => {});
 
 // ------------------------------------------------------------------ scanning sheet music
 const scanDialog = new ScanDialog({
@@ -131,7 +148,8 @@ const scanDialog = new ScanDialog({
 async function openScan(result: ScanResult, file: File) {
   const bytes = base64Bytes(result.data);
   const xml = result.format === 'mxl' ? await readMxl(bytes.buffer as ArrayBuffer) : new TextDecoder().decode(bytes);
-  const score = fromMusicXML(xml);
+  // words read under the notes become lyrics (Audiveris files them as text below the staff)
+  const score = fromMusicXML(liftLyrics(xml));
   // the page has no readable title: name the score after the file
   if (!score.title || score.title === 'Imported score' || /^page$/i.test(score.title)) {
     score.title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim() || 'Scanned page';
@@ -142,7 +160,10 @@ async function openScan(result: ScanResult, file: File) {
   const pages = (result.pages ?? []).map((b64) => new Blob([base64Bytes(b64) as BlobPart], { type: 'image/png' }));
   // no picture from the scanner: show the file itself when the browser can (a photo)
   if (!pages.length && /^image\/(png|jpeg)$/.test(file.type)) pages.push(file);
-  if (pages.length) showPages(pages);
+  // where each bar is on those pictures, so the page can follow the cursor
+  const sheets = (result.sheets ?? []).map((b64) => new TextDecoder().decode(base64Bytes(b64)));
+  const bars = sheets.length === pages.length ? barBoxes(sheets) : [];
+  if (pages.length) showPages({ pages, bars: bars.length ? bars : undefined });
   toast('Scanned: check the notes against the page beside the score (Ctrl+Z returns to your previous score)');
 }
 
@@ -495,7 +516,7 @@ const app: AppActions = {
     input.multiple = true;
     input.onchange = () => {
       const files = [...(input.files ?? [])].filter((f) => f.type.startsWith('image/'));
-      if (files.length) showPages(files);
+      if (files.length) showPages({ pages: files });
     };
     input.click();
   },

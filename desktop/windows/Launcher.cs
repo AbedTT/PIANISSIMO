@@ -376,7 +376,9 @@ namespace Pianissimo
                 // and whether it can scan sheet music here (Audiveris is installed)
                 string info = "{\"platform\":\"windows\",\"version\":" + JsonString(BuildInfo.Version) + ",\"canInstall\":" + (Updater.CanInstall ? "true" : "false") +
                     ",\"scan\":" + (Scanner.Find() != null ? "true" : "false") +
-                    ",\"scannerSetup\":" + (ScannerSetup.Possible ? "true" : "false") + ",\"scannerMegabytes\":" + ScannerSetup.DownloadMegabytes + "}";
+                    ",\"scannerSetup\":" + (ScannerSetup.Possible ? "true" : "false") +
+                    ",\"scannerOcr\":" + (Scanner.OcrFolder() != null ? "true" : "false") +
+                    ",\"scannerMegabytes\":" + ScannerSetup.DownloadMegabytes(AppDomain.CurrentDomain.BaseDirectory) + "}";
                 Send(s, 200, "OK", "application/json", Encoding.UTF8.GetBytes(info), req.Method == "HEAD", new[] { "Cache-Control: no-store" });
                 return;
             }
@@ -438,6 +440,12 @@ namespace Pianissimo
                     {
                         if (i > 0) json.Append(',');
                         json.Append('"').Append(Convert.ToBase64String(r.Pages[i])).Append('"');
+                    }
+                    json.Append("],\"sheets\":[");
+                    for (int i = 0; i < r.Sheets.Count; i++)
+                    {
+                        if (i > 0) json.Append(',');
+                        json.Append('"').Append(Convert.ToBase64String(r.Sheets[i])).Append('"');
                     }
                     json.Append("]}}");
                     Send(s, 200, "OK", "application/json", Encoding.UTF8.GetBytes(json.ToString()), false, new[] { "Cache-Control: no-store" });

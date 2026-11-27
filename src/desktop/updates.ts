@@ -19,6 +19,8 @@ export interface DesktopInfo {
   scan?: boolean;
   /** The app can download and set up Audiveris itself (Windows), and how big that download is. */
   scannerSetup?: boolean;
+  /** Text reading (titles, lyrics) is set up next to the scanner. */
+  scannerOcr?: boolean;
   scannerMegabytes?: number;
 }
 

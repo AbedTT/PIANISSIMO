@@ -31,10 +31,11 @@ ask for administrator rights. Start Pianissimo from the Start menu or the deskto
   a USB stick or in the cloud); **Restore…** or **Open** adds them back, also on another computer.
 - **Scanning sheet music.** *Import ▾ → Scan a page* turns a PDF or photo of printed music into a score,
   read on this computer by **Audiveris** (free, open source, AGPL-3.0). Setup installs it with Pianissimo
-  (the *Music scanner* box, ticked by default): it downloads the official Audiveris release (about 81 MB,
-  checked against its SHA-256) and unpacks it into `%LOCALAPPDATA%\Programs\Pianissimo\scanner`, without
-  administrator rights or a separate installer. Updates keep it; uninstalling removes it. Left it out, or
-  updated from an older version? *Scan a page* offers **Set up the scanner**: one click does the same. A
+  (the *Music scanner* box, ticked by default): it downloads the official Audiveris release (about 81 MB)
+  and Tesseract's English text-reading data (22 MB, for titles and lyrics), checks both against their
+  SHA-256, and unpacks them into `%LOCALAPPDATA%\Programs\Pianissimo\scanner`, without administrator
+  rights or a separate installer. Updates keep it; uninstalling removes it. Left it out? *Scan a page*
+  offers **Set up the scanner**; set up by 0.5.1 (without text reading)? It offers **Add text reading**. A
   separately installed Audiveris is found too, or set `audiveris=C:\path\to\Audiveris` in `settings.ini`.
   Scripted installs: `/noscanner` leaves it out.
 - **Updates.** Each time it starts (and once a day while it stays open) Pianissimo checks whether a new version is out. If so, a bar at the top shows
@@ -63,8 +64,10 @@ signature, so Gatekeeper opens it without the "developer cannot be verified" dia
   the script starts their installer (`xcode-select --install`); run the script again afterwards.
 - **The window.** With Chrome, Edge, Chromium or Brave installed, Pianissimo opens in its own window.
   Otherwise it opens in your default browser (Safari works too).
-- **Scanning sheet music.** Install Audiveris from [its releases page](https://github.com/Audiveris/audiveris/releases/latest)
-  (the `.dmg` for your Mac: arm64 for Apple silicon, x86_64 for Intel) into Applications.
+- **Scanning sheet music.** `install.sh` offers to set up the music scanner at the end (about 100 MB, once):
+  it downloads the Audiveris `.dmg` for your Mac (Apple silicon or Intel), checks it, and copies the app into
+  `~/Library/Application Support/Pianissimo/scanner`, with the text-reading data. You can also do it later
+  with **Set up the scanner** in *Import ▾ → Scan a page*, or install Audiveris yourself into Applications.
 - **Opening files.** Use **Open** in Pianissimo. Double-clicking score files in Finder is not
   supported on the Mac yet.
 - **Removing.** Run `sh ~/Applications/Pianissimo.app/Contents/Resources/uninstall.sh`. Add `--purge` to
@@ -80,9 +83,12 @@ files. The `pianissimo` command also works if `~/.local/bin` is on your PATH.
 
 - **Requirements.** Python 3.7+, which almost every desktop distribution includes. Any browser works;
   with Chrome, Chromium, Edge or Brave, Pianissimo gets its own window.
-- **Scanning sheet music.** Install Audiveris (the `.deb` from [its releases page](https://github.com/Audiveris/audiveris/releases/latest),
-  or from Flathub). Pianissimo looks for `/opt/audiveris/bin/Audiveris` and `audiveris` on the PATH; set
-  `audiveris=` in `settings.ini` for anywhere else.
+- **Scanning sheet music** (x86_64). `install.sh` offers to set up the music scanner at the end (about
+  100 MB, once): it downloads the Audiveris `.deb`, checks it, and unpacks it into
+  `~/.local/share/pianissimo/scanner` without installing a system package (Python 3.14 reads the package
+  itself; older Pythons use `dpkg-deb`, or `tar` with `zstd`). **Set up the scanner** in *Import ▾ → Scan a
+  page* does the same later. A system-wide Audiveris (`/opt/audiveris/bin/Audiveris`, `audiveris` on the
+  PATH, or `audiveris=` in `settings.ini`) is found too. `PIANISSIMO_NO_SCANNER=1 sh install.sh` skips it.
 - **Removing.** Run `sh ~/.local/share/pianissimo/program/uninstall.sh`. Add `--purge` to delete the
   saved scores as well.
 - **Without installing.** You can also run `python3 pianissimo.py` from the unpacked folder.

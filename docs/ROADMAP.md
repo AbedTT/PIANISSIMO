@@ -6,7 +6,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 
 ---
 
-## 1. Where we are (phases 1–38, shipped)
+## 1. Where we are (phases 1–42, shipped)
 
 | Area | Shipped |
 |---|---|
@@ -40,8 +40,9 @@ Everything from the original gap list that shipped in phases 7–18 has been rem
 | Area | Item | Priority | Planned in |
 |---|---|---|---|
 | Legal | The rewritten Privacy and Terms, and their French, Spanish and German translations, are drafts: a person (the site operator, ideally with legal advice) must review them and add contact details and governing law | P1 before going live | Needs a person |
-| Input | Scanning quality depends on Audiveris: clean printed scores read well, handwriting and photos taken at an angle poorly. It can miss a short last line (one bar alone on a line, as in Pianissimo's own printouts), and it reads no titles or lyrics unless its OCR language data is installed | P3 | Upstream |
-| Input | Recordings: a melody needs a steady tempo (there is no tempo map for a rubato performance), and chords from Basic Pitch are a draft (it hears notes, not voices or hands). Several pages of one scan are shown one at a time | P3 | Idea |
+| Input | Scanning quality depends on Audiveris: clean printed scores read well, handwriting and photos taken at an angle poorly. One-letter chord names (C, F, G) are often missed; text reading is English only | P3 | Upstream |
+| Input | Recordings: the tempo may drift but is written as one tempo mark (the notes are placed by the tracked beats); chords from Basic Pitch are a draft (it hears notes, not voices or hands) | P3 | Idea |
+| Desktop | The Mac scanner setup (hdiutil, ditto) could not be tried here; the Linux one was tried on Windows up to unpacking the real package | P2 | Needs a Mac |
 | Notation | More than four voices per staff: a deliberate limit, the same as MuseScore and Sibelius and the usual MusicXML practice | — | Not planned |
 
 ## 3. Architecture decisions for the next phases
@@ -394,7 +395,25 @@ Beyond the original plan, built after it was complete.
 - [x] **Updates**: checked at every start (not more than once in ten minutes) and once a day while the app stays open, instead of once a day. *Check for updates* always answers in the bar: up to date (with the version), or what went wrong with *Try again*. The side panel shows the installed version and a *Check for updates* button in the desktop app.
 - [ ] macOS and Linux still install Audiveris themselves (the dialog shows how): its `.dmg` and `.deb` need the system installer.
 
-**Phases 1–38 are complete.** Section 2 lists what is still open.
+### Phase 39: Better scanning results ✅
+- [x] **A short last line is read**: Audiveris dropped a line of music holding one or two bars (its minimum staff length). `-constant org.audiveris.omr.sheet.grid.LinesRetriever.minStaffLength=10` (in both launchers and the server example) keeps it; 10 staff spaces still keeps out stray lines. Found by scanning Pianissimo's own printouts; the waltz fixture now has all 8 bars.
+- [x] **Titles and lyrics**: Tesseract's English data (tessdata 4.1.0, 22 MB, pinned by SHA-256; the "fast" data does not work with Audiveris's engine) is set up with the scanner and given to Audiveris through `TESSDATA_PREFIX`. Audiveris files lyrics as words below the staff: `liftLyrics` turns a row of them at one height (three bars or more) into lyrics, one word per note, starting again at each group so a missed word does not shift the rest. Tested on a real scan: every word it read landed under its note.
+- [x] Copies set up by 0.5.1 get **Add text reading** in the scan dialog (only the 22 MB); setup and *Set up the scanner* fetch whatever is missing.
+
+### Phase 40: The page follows the cursor ✅
+- [x] The launchers and the server return Audiveris's description of each page with the pictures; `barBoxes` finds every bar on them (system lines and measure stacks), in the same order as the score's bars, kept with the pages in My scores.
+- [x] All pages one under the other (‹ › jump between them); the cursor's bar is outlined on the page and scrolled into view (⌖ turns following off); a click on a bar of the page moves the cursor there.
+
+### Phase 41: Scanner setup on Mac and Linux ✅
+- [x] The Mac/Linux package carries `scanner.json` (the pinned Audiveris `.dmg` for Apple silicon and Intel, the `.deb` for Linux x86_64, the text data). **Set up the scanner** in the app and `install.sh` (asked at the end; `pianissimo.py --setup-scanner`) download and check them and unpack into the data folder: the `.dmg` mounted read-only and the app copied out, the `.deb` read by Python (3.14) or `dpkg-deb`/`tar --zstd`, with no administrator rights.
+- [x] Tried on Windows: the real `.deb` unpacks (2,667 files, launcher and settings in place), damaged or wrong-size downloads are refused. The Mac steps were not run (see section 2).
+
+### Phase 42: Recordings whose tempo changes ✅
+- [x] `trackBeats`: dynamic-programming beat tracking over the note starts (after Ellis 2007), each beat compared with the one before, so the tempo can drift far (110 → 70) but not jump. Notes are placed between the beats around them; the score gets the usual tempo.
+- [x] *The tempo changes* in the recording dialog, ticked by itself when the beats speed up or slow down by more than 8 %; doubling or halving the tempo works with it. Tested on Ode to Joy played with an accelerando (80 → 120) and a ritardando (110 → 70): one fixed tempo loses the bar lines, the tracked beats keep every bar right.
+- [x] The website's home page and the guide describe scanning with titles and lyrics, the page following the cursor, recordings with changing tempos and the desktop app (with a download link).
+
+**Phases 1–42 are complete.** Section 2 lists what is still open.
 
 ## 5. How a phase is built
 

@@ -24,6 +24,12 @@ namespace Pianissimo
     static class Scanner
     {
         const int MaxBytes = 30 * 1024 * 1024;
+        /// <summary>
+        /// Audiveris settings. minStaffLength: by default a short line of music (a last line holding one
+        /// or two bars) is not taken for a staff, so its bars were lost; 10 staff spaces still keeps out
+        /// stray lines.
+        /// </summary>
+        public const string Tuning = "-constant org.audiveris.omr.sheet.grid.LinesRetriever.minStaffLength=10";
         const int TimeLimitMs = 5 * 60 * 1000;
         static readonly object busy = new object();
 
@@ -60,6 +66,13 @@ namespace Pianissimo
             return null;
         }
 
+        /// <summary>The text-reading data Pianissimo set up next to its scanner (titles, lyrics), or null.</summary>
+        public static string OcrFolder()
+        {
+            string dir = ScannerSetup.OcrFolder(AppDomain.CurrentDomain.BaseDirectory);
+            return dir ?? ScannerSetup.OcrFolder(Common.InstallDir);
+        }
+
         /// <summary>"pdf", "png", "jpg", "tif", or null for anything else.</summary>
         public static string KindOf(byte[] data)
         {
@@ -86,6 +99,8 @@ namespace Pianissimo
             public string Format;      // "mxl" or "musicxml"
             public byte[] Music;
             public List<byte[]> Pages = new List<byte[]>();
+            /// <summary>Audiveris's description of each page (sheet#N.xml): where every bar is on the picture.</summary>
+            public List<byte[]> Sheets = new List<byte[]>();
         }
 
         public static Result Scan(byte[] data, string fileName)
@@ -106,14 +121,19 @@ namespace Pianissimo
                 {
                     string input = Path.Combine(dir, BaseName(fileName) + "." + kind);
                     File.WriteAllBytes(input, data);
-                    Run(exe, "-batch -export -output " + Quote(outDir) + " " + Quote(input));
+                    Run(exe, "-batch " + Tuning + " -export -output " + Quote(outDir) + " " + Quote(input));
                     Result result = new Result();
                     string music = FindFile(outDir, new[] { ".mxl", ".musicxml", ".xml" });
                     if (music == null) throw new ScanError(422, "No music could be recognised on that page. Try a straighter, sharper scan or photo.");
                     result.Format = music.EndsWith(".mxl", StringComparison.OrdinalIgnoreCase) ? "mxl" : "musicxml";
                     result.Music = File.ReadAllBytes(music);
                     string book = FindFile(outDir, new[] { ".omr" });
-                    if (book != null) result.Pages = PageImages(book);
+                    if (book != null)
+                    {
+                        result.Pages = FromBook(book, @"^sheet#(\d+)/BINARY\.png$");
+                        result.Sheets = FromBook(book, @"^sheet#(\d+)/sheet#\d+\.xml$");
+                        if (result.Sheets.Count != result.Pages.Count) result.Sheets.Clear();
+                    }
                     return result;
                 }
                 finally
@@ -131,6 +151,9 @@ namespace Pianissimo
             info.RedirectStandardOutput = true;
             info.RedirectStandardError = true;
             info.WorkingDirectory = Path.GetDirectoryName(exe);
+            // text reading (titles, lyrics) with the data Pianissimo set up
+            string ocr = OcrFolder();
+            if (ocr != null) info.EnvironmentVariables["TESSDATA_PREFIX"] = ocr;
             using (Process p = Process.Start(info))
             {
                 // keep reading, or Audiveris stops when its output buffer is full
@@ -146,9 +169,9 @@ namespace Pianissimo
             }
         }
 
-        /// <summary>Audiveris's black-and-white picture of each page, from its project file (a zip):
-        /// sheet#1/BINARY.png, sheet#2/BINARY.png, …</summary>
-        static List<byte[]> PageImages(string omr)
+        /// <summary>One file per page from Audiveris's project file (a zip), in page order: its
+        /// black-and-white picture (sheet#1/BINARY.png, …) or its description (sheet#1/sheet#1.xml, …).</summary>
+        static List<byte[]> FromBook(string omr, string pattern)
         {
             SortedDictionary<int, byte[]> pages = new SortedDictionary<int, byte[]>();
             try
@@ -157,7 +180,7 @@ namespace Pianissimo
                 {
                     foreach (ZipArchiveEntry e in zip.Entries)
                     {
-                        Match m = Regex.Match(e.FullName, @"^sheet#(\d+)/BINARY\.png$");
+                        Match m = Regex.Match(e.FullName, pattern);
                         if (!m.Success || e.Length > 20 * 1024 * 1024) continue;
                         using (Stream s = e.Open())
                         using (MemoryStream copy = new MemoryStream())

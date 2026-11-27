@@ -7,6 +7,8 @@
 # Linux: copies the program to ~/.local/share/pianissimo/program, adds "Pianissimo" to the
 #        applications menu (with "Open with" for score files) and a `pianissimo` command.
 # Needs Python 3 and, for the app window, Chrome, Chromium, Edge or Brave (any browser works without).
+# At the end it offers the music scanner (Audiveris), which reads PDFs and photos of sheet music:
+# about 100 MB, downloaded once into Pianissimo's data folder. PIANISSIMO_NO_SCANNER=1 skips it.
 set -eu
 
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -16,6 +18,20 @@ say() { printf '%s\n' "$*"; }
 fail() { printf 'Pianissimo: %s\n' "$*" >&2; exit 1; }
 
 [ -f "$HERE/app/app.html" ] || fail "run this script from the unpacked Pianissimo folder (app/ is missing)."
+
+# Set up the music scanner now? $1 = Python, $2 = pianissimo.py
+offer_scanner() {
+  [ -f "$HERE/scanner.json" ] || return 0
+  [ "${PIANISSIMO_NO_SCANNER:-}" = "1" ] && return 0
+  if [ -t 0 ]; then
+    printf 'Also set up the music scanner, to turn PDFs and photos of sheet music into scores?\nIt downloads about 100 MB once. [Y/n] '
+    read -r answer || answer=n
+    case "$answer" in
+      [nN]*) say "Skipped: set it up later in Pianissimo with Import > Scan a page."; return 0 ;;
+    esac
+  fi
+  "$1" "$2" --setup-scanner || say "The music scanner was not set up; set it up later in Pianissimo with Import > Scan a page."
+}
 
 find_python() {
   for p in python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /Library/Frameworks/Python.framework/Versions/Current/bin/python3 /usr/bin/python3; do
@@ -42,6 +58,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
   mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
   cp -R "$HERE/app" "$HERE/pianissimo.py" "$HERE/uninstall.sh" "$HERE/icon.png" "$APP/Contents/Resources/"
   [ -f "$HERE/VERSION" ] && cp "$HERE/VERSION" "$APP/Contents/Resources/"
+  [ -f "$HERE/scanner.json" ] && cp "$HERE/scanner.json" "$APP/Contents/Resources/"
   cat > "$APP/Contents/MacOS/Pianissimo" <<'EOF'
 #!/bin/sh
 # Finder starts apps with a short PATH: look for Python 3 where installers put it
@@ -87,6 +104,7 @@ EOF
   xattr -dr com.apple.quarantine "$APP" >/dev/null 2>&1 || true
   codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
   touch "$APP"
+  offer_scanner "$(find_python)" "$APP/Contents/Resources/pianissimo.py"
   say "Done. Open Pianissimo from Launchpad, Spotlight or ~/Applications."
   say "To remove it: sh \"$APP/Contents/Resources/uninstall.sh\""
   exit 0
@@ -101,6 +119,7 @@ rm -rf "$PROGRAM"
 mkdir -p "$PROGRAM" "$HOME/.local/bin" "$DATA/applications" "$DATA/icons/hicolor/512x512/apps" "$DATA/mime/packages"
 cp -R "$HERE/app" "$HERE/pianissimo.py" "$HERE/uninstall.sh" "$HERE/icon.png" "$PROGRAM/"
 [ -f "$HERE/VERSION" ] && cp "$HERE/VERSION" "$PROGRAM/"
+[ -f "$HERE/scanner.json" ] && cp "$HERE/scanner.json" "$PROGRAM/"
 chmod 755 "$PROGRAM/pianissimo.py" "$PROGRAM/uninstall.sh"
 cat > "$HOME/.local/bin/pianissimo" <<EOF
 #!/bin/sh
@@ -138,6 +157,7 @@ command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$DATA/m
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$DATA/applications" >/dev/null 2>&1 || true
 command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q "$DATA/icons/hicolor" >/dev/null 2>&1 || true
 
+offer_scanner "$PY" "$PROGRAM/pianissimo.py"
 say "Done. Start Pianissimo from your applications menu, or run: pianissimo"
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) say "(Add ~/.local/bin to your PATH to use the pianissimo command.)" ;; esac
 say "To remove it: sh \"$PROGRAM/uninstall.sh\""

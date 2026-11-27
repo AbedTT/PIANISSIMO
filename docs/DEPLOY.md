@@ -229,11 +229,13 @@ Then the visitor's own address is used for the sign-in limits (instead of everyo
 Install [Audiveris](https://github.com/Audiveris/audiveris) (open source, needs Java) on the server. Then set `omr_command` (`PIANISSIMO_OMR_COMMAND`):
 
 ```php
-'omr_command' => '/opt/audiveris/bin/Audiveris -batch -export -output {out} {in}',
+'omr_command' => 'TESSDATA_PREFIX=/opt/tessdata /opt/audiveris/bin/Audiveris -batch -constant org.audiveris.omr.sheet.grid.LinesRetriever.minStaffLength=10 -export -output {out} {in}',
 'omr_timeout' => 180, // seconds
 ```
 
-`{in}` is replaced by the uploaded file (named after the upload, so a page without a readable title gets the file's name), `{out}` by a fresh folder; any `.mxl`/`.musicxml` written into it is returned. With PHP's `zip` extension, Audiveris's black-and-white picture of each page (from its `.omr` file) goes back too, and the editor shows it beside the score. Allow uploads of 10 MB in `php.ini` (`upload_max_filesize = 10M`, `post_max_size = 12M`). Without `omr_command`, the editor's *Scan a page* dialog says this site has no scanner.
+`minStaffLength=10` keeps a short last line of music (one or two bars) that Audiveris otherwise drops. For titles and lyrics put Tesseract's [`eng.traineddata`](https://github.com/tesseract-ocr/tessdata/raw/4.1.0/eng.traineddata) (the standard one, not `tessdata_fast`) in the `TESSDATA_PREFIX` folder; words Audiveris reads under the notes become lyrics in the editor.
+
+`{in}` is replaced by the uploaded file (named after the upload, so a page without a readable title gets the file's name), `{out}` by a fresh folder; any `.mxl`/`.musicxml` written into it is returned. With PHP's `zip` extension, Audiveris's black-and-white picture of each page and its description of the page (from its `.omr` file) go back too: the editor shows the pages beside the score and outlines the cursor's bar on them. Allow uploads of 10 MB in `php.ini` (`upload_max_filesize = 10M`, `post_max_size = 12M`). Without `omr_command`, the editor's *Scan a page* dialog says this site has no scanner.
 
 The desktop app does not need this: it runs Audiveris on the user's own computer. Turning recordings into notes needs nothing on the server either (it runs in the browser; the chord model is served from `vendor/` with the app).
 
