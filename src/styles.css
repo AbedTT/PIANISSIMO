@@ -164,6 +164,10 @@ button.primary.small, .primary.small { padding: 6px 12px; }
 .auth-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .auth-form input { font-size: 15px; padding: 9px 10px; }
 .form-error { color: #c92a2a; font-size: 13px; margin: 0; }
+.form-ok { color: #2b8a3e; font-size: 13px; margin: 0; }
+.auth-form .hint { margin: 0; }
+.auth-form .link-btn { align-self: center; color: var(--accent); font-size: 13px; padding: 2px 6px; }
+.auth-form .link-btn:hover { text-decoration: underline; }
 .lib-tools { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .lib-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow: auto; }
 .lib-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; }

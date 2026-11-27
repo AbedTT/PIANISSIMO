@@ -36,7 +36,7 @@ class FakeService {
     const c = this.clients.find((x) => x.id === id)!;
     for (const msg of c.outbox.splice(0) as { t: string; op?: Op; doc?: Score }[]) {
       if (msg.t === 'seed' && !this.doc) this.doc = msg.doc!;
-      if (msg.t === 'cursor') for (const o of this.clients) if (o !== c) o.inbox.push({ t: 'cursor', id, c: (msg as { c: unknown }).c });
+      if (msg.t === 'cursor') for (const o of this.clients) if (o !== c) o.inbox.push({ t: 'cursor', id, c: (msg as unknown as { c: unknown }).c });
       if (msg.t !== 'op') continue;
       const op = msg.op!;
       if (!this.doc || (op.k === 'bars' && op.n !== this.doc.measures.length)) {

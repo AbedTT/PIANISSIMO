@@ -3,7 +3,7 @@
  * and drives it like the browser does (cookies + CSRF header). Skipped when PHP is missing.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -41,6 +41,15 @@ class Client {
   }
 }
 
+/**
+ * The test database: a throw-away SQLite file, or with TEST_DB_DSN=mysql:host=…;dbname=… the
+ * same tests on MySQL/MariaDB (an empty database).
+ */
+const dbEnv = (): Record<string, string> =>
+  process.env.TEST_DB_DSN
+    ? { PIANISSIMO_DB_DSN: process.env.TEST_DB_DSN, PIANISSIMO_DB_USER: process.env.TEST_DB_USER ?? 'root', PIANISSIMO_DB_PASS: process.env.TEST_DB_PASS ?? '' }
+    : { PIANISSIMO_DB: join(dir, 'test.sqlite') };
+
 let server: ChildProcess | undefined;
 let realtime: ChildProcess | undefined;
 let dir = '';
@@ -51,7 +60,7 @@ describe.skipIf(!php)('PHP API', () => {
     server = spawn(php!, ['-S', `localhost:${PORT}`, '-t', resolve(__dirname, '../..')], {
       env: {
         ...process.env,
-        PIANISSIMO_DB: join(dir, 'test.sqlite'),
+        ...dbEnv(),
         PIANISSIMO_REALTIME_URL: `ws://localhost:${RT_PORT}`,
         PIANISSIMO_REALTIME_SECRET: RT_SECRET,
         PIANISSIMO_DEBUG: '1',
@@ -487,7 +496,7 @@ describe.skipIf(!php)('PHP API', () => {
     expect(mails().slice(mark)).not.toContain('To: bob@example.com');
     expect(mails().slice(mark)).toContain('Bob commented on “Valse”');
     const run = spawnSync(php!, [resolve(__dirname, '../../server/cron/digest.php')], {
-      env: { ...process.env, PIANISSIMO_DB: join(dir, 'test.sqlite'), PIANISSIMO_MAIL_FROM: 'music@example.com', PIANISSIMO_MAIL_LOG: MAIL_LOG, PIANISSIMO_SITE_URL: 'https://music.example.com/' },
+      env: { ...process.env, ...dbEnv(), PIANISSIMO_MAIL_FROM: 'music@example.com', PIANISSIMO_MAIL_LOG: MAIL_LOG, PIANISSIMO_SITE_URL: 'https://music.example.com/' },
       encoding: 'utf8',
     });
     expect(run.stdout).toMatch(/digest\(s\) sent/);
@@ -497,7 +506,7 @@ describe.skipIf(!php)('PHP API', () => {
     // a second run the same day has nothing new
     const again = mails().length;
     spawnSync(php!, [resolve(__dirname, '../../server/cron/digest.php')], {
-      env: { ...process.env, PIANISSIMO_DB: join(dir, 'test.sqlite'), PIANISSIMO_MAIL_FROM: 'music@example.com', PIANISSIMO_MAIL_LOG: MAIL_LOG },
+      env: { ...process.env, ...dbEnv(), PIANISSIMO_MAIL_FROM: 'music@example.com', PIANISSIMO_MAIL_LOG: MAIL_LOG },
     });
     expect(mails().length).toBe(again);
     await bob.call('POST', '/notifications/email', { mode: 'off' });
@@ -512,7 +521,7 @@ describe.skipIf(!php)('PHP API', () => {
     const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
     const upload = async (who: Client, bytes: Uint8Array, name: string, type: string) => {
       const form = new FormData();
-      form.append('file', new Blob([bytes], { type }), name);
+      form.append('file', new Blob([bytes as BlobPart], { type }), name);
       const res = await fetch(`${BASE}/omr`, { method: 'POST', headers: { Cookie: who.cookie, 'X-CSRF-Token': who.csrf }, body: form });
       const data = await res.json();
       if (data.csrf) who.csrf = data.csrf;
@@ -554,6 +563,113 @@ describe.skipIf(!php)('PHP API', () => {
     expect((await visitor.call('GET', `/public/${mine.slug}`)).status).toBe(404);
   });
 
+  it('confirms the email, resets a forgotten password and changes it; other devices are signed out', async () => {
+    const mails = () => (existsSync(MAIL_LOG) ? readFileSync(MAIL_LOG, 'utf8') : '');
+    const lastLink = (to: string, kind: 'reset' | 'verify') => {
+      const mail = mails().split('-----').filter((m) => m.includes(`To: ${to}`) && m.includes(`#${kind}=`)).pop();
+      return mail?.match(new RegExp(`(https://\\S+)#${kind}=([0-9a-f]{64})`)) ?? null;
+    };
+    const erin = new Client();
+    const phone = new Client(); // Erin's second device
+    await erin.call('GET', '/auth/me');
+    const me = (await erin.call('POST', '/auth/register', { name: 'Erin', email: 'erin@example.com', password: 'first-pass' })).data.user;
+    expect(me.verified).toBe(false);
+    expect((await erin.call('GET', '/auth/me')).data.mail).toBe(true);
+
+    // a confirmation link came with the new account; it works once
+    const v = lastLink('erin@example.com', 'verify')!;
+    expect(v[1]).toBe('https://music.example.com/app.html');
+    expect((await visitor.call('POST', '/auth/verify', { token: 'f'.repeat(64) })).status).toBe(400);
+    expect((await visitor.call('POST', '/auth/verify', { token: v[2] })).status).toBe(200);
+    expect((await erin.call('GET', '/auth/me')).data.user.verified).toBe(true);
+    expect((await visitor.call('POST', '/auth/verify', { token: v[2] })).status).toBe(400);
+    expect((await erin.call('POST', '/account/verify', {})).data.sent).toBe(false); // nothing left to confirm
+
+    await phone.call('GET', '/auth/me');
+    await phone.call('POST', '/auth/login', { email: 'erin@example.com', password: 'first-pass' });
+    expect((await phone.call('GET', '/auth/me')).data.user.name).toBe('Erin');
+
+    // forgot: the same answer whether or not the address has an account
+    const before = mails().length;
+    expect((await visitor.call('POST', '/auth/forgot', { email: 'nobody-here@example.com' })).status).toBe(200);
+    expect(mails().length).toBe(before);
+    expect((await visitor.call('POST', '/auth/forgot', { email: 'ERIN@example.com' })).status).toBe(200);
+    const r = lastLink('erin@example.com', 'reset')!;
+    expect(mails().slice(before)).toContain('Subject: Choose a new Pianissimo password');
+
+    const reset = new Client();
+    await reset.call('GET', '/auth/me');
+    expect((await reset.call('POST', '/auth/reset', { token: r[2], password: 'short' })).status).toBe(422);
+    expect((await reset.call('POST', '/auth/reset', { token: 'nope', password: 'second-pass' })).status).toBe(400);
+    const done = await reset.call('POST', '/auth/reset', { token: r[2], password: 'second-pass' });
+    expect(done.status).toBe(200);
+    expect(done.data.user.name).toBe('Erin'); // signed in on this device
+    expect((await reset.call('POST', '/auth/reset', { token: r[2], password: 'third-pass' })).status).toBe(400); // used up
+    // both older sessions ended
+    expect((await erin.call('GET', '/auth/me')).data.user).toBeNull();
+    expect((await phone.call('GET', '/scores')).status).toBe(401);
+    expect((await erin.call('POST', '/auth/login', { email: 'erin@example.com', password: 'first-pass' })).status).toBe(401);
+
+    // change the password while signed in: needs the current one, keeps this session
+    expect((await reset.call('POST', '/account/password', { current: 'wrong-one', password: 'third-pass' })).status).toBe(403);
+    expect((await reset.call('POST', '/account/password', { current: 'second-pass', password: 'third-pass' })).status).toBe(200);
+    expect((await reset.call('GET', '/auth/me')).data.user.name).toBe('Erin');
+    expect((await erin.call('POST', '/auth/login', { email: 'erin@example.com', password: 'third-pass' })).status).toBe(200);
+    expect((await visitor.call('POST', '/account/password', { current: 'x', password: 'yyyyyyyy' })).status).toBe(401);
+  });
+
+  it('collects error reports, grouped and without personal details, for admins only', async () => {
+    const crash = (message: string, stack: string) =>
+      visitor.call('POST', '/errors', { message, stack, page: 'app.html?x=1#reset=abc', version: '0.3.0' });
+    expect((await crash('TypeError: score is undefined (bar 12)', 'at render (assets/renderer-a1.js:10:5)')).status).toBe(200);
+    expect((await crash('TypeError: score is undefined (bar 31)', 'at render (assets/renderer-a1.js:10:5)')).status).toBe(200); // same error
+    await crash('Error: mail for erin@example.com failed', 'at send (assets/app-b2.js:3:1)\n  token 0123456789abcdef0123456789abcdef');
+    expect((await visitor.call('POST', '/errors', { message: '' })).status).toBe(422);
+
+    expect((await visitor.call('GET', '/admin/errors')).status).toBe(401);
+    expect((await bob.call('GET', '/admin/errors')).status).toBe(403);
+    const { errors } = (await alice.call('GET', '/admin/errors')).data;
+    const render = errors.find((e: { message: string }) => e.message.startsWith('TypeError: score'));
+    expect(render).toMatchObject({ source: 'client', count: 2, page: 'app.html', version: '0.3.0' });
+    const mail = errors.find((e: { message: string }) => e.message.includes('mail for'));
+    expect(mail.message).toBe('Error: mail for <email> failed');
+    expect(mail.stack).toContain('<token>');
+
+    expect((await alice.call('DELETE', `/admin/errors/${render.id}`)).status).toBe(200);
+    expect((await alice.call('GET', '/admin/errors')).data.errors.some((e: { id: number }) => e.id === render.id)).toBe(false);
+    expect((await alice.call('DELETE', '/admin/errors')).status).toBe(200);
+    expect((await alice.call('GET', '/admin/errors')).data.errors).toHaveLength(0);
+  });
+
+  it('backs up the database and restores it into an empty one (also how a site moves to MySQL)', () => {
+    const cron = (script: string, args: string[], env: Record<string, string>) =>
+      spawnSync(php!, [resolve(__dirname, `../../server/cron/${script}`), ...args], { env: { ...process.env, ...env }, encoding: 'utf8' });
+    const backups = join(dir, 'backups');
+    const made = cron('backup.php', [`--dir=${backups}`, '--keep=2'], dbEnv());
+    expect(made.stdout).toMatch(/backed up \d+ accounts, \d+ scores/);
+    const file = join(backups, readdirSync(backups)[0]);
+
+    // into a fresh SQLite database
+    const copy = { PIANISSIMO_DB: join(dir, 'restored.sqlite') };
+    const restored = cron('restore.php', [file], copy);
+    expect(restored.status).toBe(0);
+    const [, users, scores] = /restored (\d+) accounts, (\d+) scores/.exec(restored.stdout)!;
+    expect(Number(users)).toBeGreaterThan(3);
+    expect(Number(scores)).toBeGreaterThan(0);
+    // the copy holds the same rows: a backup of it matches line for line
+    const again = cron('backup.php', [`--dir=${join(dir, 'backups2')}`], copy);
+    expect(again.stdout).toContain(`backed up ${users} accounts, ${scores} scores`);
+    // a database that has accounts is not overwritten by accident
+    const refused = cron('restore.php', [file], copy);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('already has accounts');
+    expect(cron('restore.php', [file, '--replace'], copy).status).toBe(0);
+    // old backups beyond --keep are removed
+    cron('backup.php', [`--dir=${backups}`, '--keep=2'], dbEnv());
+    cron('backup.php', [`--dir=${backups}`, '--keep=2'], dbEnv());
+    expect(readdirSync(backups).filter((f) => f.endsWith('.jsonl.gz')).length).toBeLessThanOrEqual(2);
+  });
+
   it('signs out and back in; throttles password guessing', async () => {
     await alice.call('POST', '/auth/logout', {});
     expect((await alice.call('GET', '/scores')).status).toBe(401);
@@ -565,5 +681,9 @@ describe.skipIf(!php)('PHP API', () => {
       last = (await visitor.call('POST', '/auth/login', { email: 'x@example.com', password: 'nope-nope' })).status;
     }
     expect(last).toBe(429);
+    // counted per account: someone else at the same address (a classroom) still gets in
+    const classmate = new Client();
+    await classmate.call('GET', '/auth/me');
+    expect((await classmate.call('POST', '/auth/login', { email: 'bob@example.com', password: 'secret123' })).status).toBe(200);
   });
 });

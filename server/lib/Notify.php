@@ -227,7 +227,7 @@ final class Notify
 
     private function mailOn(): bool
     {
-        return trim((string) ($this->config['mail_from'] ?? '')) !== '';
+        return (new Mailer($this->config))->enabled();
     }
 
     private function url(string $link): string
@@ -239,16 +239,6 @@ final class Notify
     /** Send (or, with mail_log, write down) one email. A failure never breaks the request. */
     private function deliver(string $to, string $subject, string $body): void
     {
-        if (!$this->mailOn()) {
-            return;
-        }
-        $from = str_replace(["\r", "\n"], '', (string) $this->config['mail_from']);
-        $log = (string) ($this->config['mail_log'] ?? '');
-        if ($log !== '') {
-            @file_put_contents($log, "To: $to\nSubject: $subject\n\n$body\n-----\n", FILE_APPEND | LOCK_EX);
-            return;
-        }
-        $headers = "From: $from\r\nContent-Type: text/plain; charset=UTF-8";
-        @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers);
+        (new Mailer($this->config))->send($to, $subject, $body);
     }
 }

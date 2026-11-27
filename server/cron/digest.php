@@ -18,6 +18,7 @@ if (PHP_SAPI !== 'cli') {
 
 require __DIR__ . '/../lib/Http.php';
 require __DIR__ . '/../lib/Db.php';
+require __DIR__ . '/../lib/Mail.php';
 require __DIR__ . '/../lib/Notify.php';
 
 $config = require __DIR__ . '/../config.php';

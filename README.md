@@ -25,7 +25,10 @@ npm run dev        # site + editor on http://localhost:5173 (proxies /server to 
 npm test           # unit tests + API integration tests (the API test is skipped if PHP is missing)
 npm run build      # production build into dist/
 npm run e2e        # end-to-end tests in headless Chrome against dist/ (set CHROME_PATH if Chrome is not found)
+npm run lint       # type-check the app and the tests, then the project rules in scripts/lint.mjs
 ```
+
+In development, `npm run api` writes emails (password reset and confirmation links) to `server/data/dev-mail.log` instead of sending them.
 
 Live co-editing in development: start `PIANISSIMO_REALTIME_SECRET=dev-secret-0123456789 npm run realtime`. Start the API with the same secret and `PIANISSIMO_REALTIME_URL=ws://localhost:8090`.
 
@@ -52,6 +55,8 @@ The editor works without the API; only sign-in, the library and sharing need it.
 ```
 
 The tables are created on the first request.
+
+**Email.** Set up a mail service (SMTP) before opening sign-ups: it is how people reset a forgotten password. See [docs/DEPLOY.md](docs/DEPLOY.md#6-email-accounts-and-admins).
 
 **HTTPS.** Serve over HTTPS in production. The session cookie is marked `Secure` automatically, and is always `HttpOnly` and `SameSite=Lax`. Every write needs the CSRF token.
 

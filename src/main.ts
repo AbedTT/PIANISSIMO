@@ -1,3 +1,4 @@
+import { startErrorReporting } from './monitor/errors';
 import './styles.css';
 import './ios.css';
 import { MidiInput } from './audio/midiInput';
@@ -40,6 +41,9 @@ import { midiOf, spellMidi } from './model/pitch';
 import { PianoKeys } from './ui/pianoKeys';
 import { initTheme, setTheme, themeChoice, toggleTheme, type ThemeChoice } from './ui/theme';
 import { Tutorial } from './ui/tutorial';
+
+// unexpected errors from here on reach the admins (admin.html)
+startErrorReporting();
 
 initTheme();
 
@@ -2213,6 +2217,8 @@ function updateAccountUI() {
   $('signInBtn').hidden = signedIn;
   $('accountMenu').hidden = !signedIn;
   if (cloud.user) $('accountName').textContent = `👤 ${cloud.user.name} ▾`;
+  // offer a new confirmation link while the address is not confirmed (and the server can send it)
+  $('verifyEmailBtn').hidden = !cloud.user || cloud.user.verified !== false || !cloud.mailAvailable;
   const status = cloud.status;
   const el = $('cloudStatus');
   el.textContent = status === 'Saved' ? `✓ ${t('Saved')}` : t(status);
@@ -2228,6 +2234,8 @@ liveUi = initLive(editor, cloud, {
 $('signInBtn').addEventListener('click', () => cloud.showAuth());
 $('signOutBtn').addEventListener('click', () => void cloud.signOut());
 $('myDataBtn').addEventListener('click', () => void cloud.downloadMyData());
+$('changePasswordBtn').addEventListener('click', () => cloud.changePassword());
+$('verifyEmailBtn').addEventListener('click', () => void cloud.resendVerification());
 $('deleteAccountBtn').addEventListener('click', () => void cloud.deleteAccount());
 classes = initClasses(cloud, { toast, scoreTitle: () => editor.score.title });
 bell = initNotifications(cloud, {

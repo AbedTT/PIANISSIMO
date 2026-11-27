@@ -227,8 +227,9 @@ final class Scores
         $args = [];
         $query = trim($query);
         if ($query !== '') {
-            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], mb_substr($query, 0, 80)) . '%';
-            $sql .= " AND (s.title LIKE ? ESCAPE '\\' OR s.composer LIKE ? ESCAPE '\\')";
+            // '!' escapes the wildcards: a backslash means different things to MySQL and SQLite
+            $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_substr($query, 0, 80)) . '%';
+            $sql .= " AND (s.title LIKE ? ESCAPE '!' OR s.composer LIKE ? ESCAPE '!')";
             array_push($args, $like, $like);
         }
         $sql .= $sort === 'likes' ? ' ORDER BY likes DESC, s.updated_at DESC LIMIT 60' : ' ORDER BY s.updated_at DESC LIMIT 60';

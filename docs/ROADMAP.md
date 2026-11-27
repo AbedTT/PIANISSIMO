@@ -6,7 +6,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 
 ---
 
-## 1. Where we are (phases 1–29, shipped)
+## 1. Where we are (phases 1–33, shipped)
 
 | Area | Shipped |
 |---|---|
@@ -28,7 +28,8 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 | **Live co-editing (18)** | Invite editors; edit the same score at once with merged bar-level edits, presence cursors and leader-only saving; optional Node realtime service |
 | **Rounding out (24–28)** | Wait mode with the microphone or on-screen piano; grades, marking criteria and a due-date calendar; notifications and an admin screen for reports; translated messages and guide; up to four voices per staff |
 | **Closing the list (29)** | Scanning sheet music (with Audiveris on the server); self-service data download and account deletion; Privacy and Terms rewritten and all legal pages translated (draft for review); emails in each person's language, or a daily digest; voices 3–4 kept clear of 1–2 |
-| **Quality** | Command registry for shortcuts, toolbar, help and search; 195 unit and API tests; 20 end-to-end browser tests (headless Chrome over the DevTools protocol, no extra dependencies), including two-person sessions, a fake microphone, offline use and phone layouts down to 320px |
+| **Production readiness (32–33)** | Password reset, password change and email confirmation; SMTP email; security headers and a Content-Security-Policy on every page; fonts as separate files (40% smaller first load); built-in crash reports for admins; trusted proxies; tested on MySQL/MariaDB, nightly backups and restore; installer signing; project lint |
+| **Quality** | Command registry for shortcuts, toolbar, help and search; 207 unit and API tests (the API tests also on MySQL in CI); 21 end-to-end browser tests (headless Chrome over the DevTools protocol, no extra dependencies), including two-person sessions, a fake microphone, offline use, phone layouts down to 320px and any security-policy violation; `npm run lint` with strict type-checking of the app and the tests |
 
 ---
 
@@ -342,7 +343,24 @@ Beyond the original plan, built after it was complete.
 - [x] **A different length for one chord note**: with a chord note picked, a new length gives it its own stem in the voice below (alto under soprano, bass under tenor), so the parts can move separately while staying aligned; the top note keeps the upper stem.
 - [x] **The score setup panel folds away** on wider screens (the settings button in the top bar); the choice is remembered.
 
-**Phases 1–31 are complete.** Section 2 lists what is still open.
+### Phase 32: Accounts people can get back into, and safer pages ✅
+- [x] **Forgot your password?** in the sign-in dialog emails a one-time link (1 hour). The answer is the same whether or not the address has an account. The token travels in the `#` part of the link (never sent to a server or in a referrer), is removed from the address bar at once, and only its SHA-256 is stored.
+- [x] **Change password** in the account menu (asks for the current one). A new or reset password **signs the account out on every other device** (an epoch per account that sessions must match).
+- [x] **Email confirmation**: new accounts get a link (7 days); **✉ Confirm my email** sends a new one. Optional `require_verified_email` lets only confirmed accounts comment or list scores publicly.
+- [x] **Reliable email**: a dependency-free SMTP client (STARTTLS or TLS, AUTH PLAIN/LOGIN, dot-stuffing, UTF-8), tested against a fake SMTP server; PHP `mail()` only as a fallback. Failures are logged, never break a request. Links come only from `site_url`, never from the request's `Host`.
+- [x] **Sign-in limits per account and per address**: wrong passwords are counted per account (10 / 15 min) and per IP (50), new accounts per IP (30), so a classroom behind one address is not locked out.
+- [x] **Security headers**: every page carries a Content-Security-Policy (scripts only from the site, no inline scripts or `eval`, samples only from their two hosts). `dist/.htaccess` adds clickjacking protection (except `embed.html`), HSTS, `nosniff`, a referrer policy, a permissions policy and caching rules; the API sends its own strict policy. Nginx settings are in DEPLOY.md. The end-to-end tests fail on any policy violation, and the Apache headers were checked on a real Apache.
+
+### Phase 33: Ready for real traffic ✅
+- [x] **Smaller first load**: VexFlow's font-free core, with Bravura and Academico as separate `.woff2` files (cached on their own) instead of six fonts inlined as base64. The engraver went from 1,382 kB (775 kB gzipped) to 591 kB (177 kB) plus 293 kB of fonts; the installers shrank by a quarter. Image export fetches the font files to embed them.
+- [x] **Crash reports**: uncaught errors in browsers and unexpected API exceptions are stored grouped (message, place in the code, page, version, browser; emails, tokens and query strings removed), at most 5 per page and 30 per address and hour. Admins see them in **admin.html → Errors** and mark them fixed; an optional webhook posts new ones to a team chat. The privacy page says so, in all four languages.
+- [x] **Behind proxies and CDNs**: `trusted_proxies` (addresses or CIDR ranges, IPv4 and IPv6) and `client_ip_header` (e.g. Cloudflare's), so limits use the visitor's address and HTTPS is recognised for the `Secure` cookie and HSTS. Forwarded headers from anyone else are ignored.
+- [x] **MySQL/MariaDB for larger sites**: the API tests now also run on MySQL 8 in CI, and all API and browser tests were run on MariaDB 10.4, which found and fixed a search query that only worked on SQLite. The database can be set from the environment.
+- [x] **Backups**: `server/cron/backup.php` (nightly, keeps 14) writes every table as compressed JSON lines, the same for SQLite and MySQL; `restore.php` loads one into an empty database in one transaction. This is also how a site moves from SQLite to MySQL (checked with a copy of a real database).
+- [x] **Signed installers**: `npm run package` signs the Windows programs with Authenticode (certificate file or store, timestamped) when a certificate is configured, and says so when not; checked with a test certificate. On macOS the install script clears the download's quarantine flag and signs the app locally, so Gatekeeper opens it.
+- [x] **Lint**: stricter compiler settings, the tests type-checked too (which found a test using a note length that does not exist), and `scripts/lint.mjs` for project rules (no `eval`/`debugger`/`.only`, `noopener` on new-tab links, every toast translated, PHP strict types and no request input in SQL text, no private keys, whitespace, `php -l`). `npm run lint` runs in CI.
+
+**Phases 1–33 are complete.** Section 2 lists what is still open.
 
 ## 5. How a phase is built
 

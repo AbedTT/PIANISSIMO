@@ -15,9 +15,10 @@ declare(strict_types=1);
 
 $defaults = [
     // SQLite needs no setup; the file is created on first use (server/data is not web-accessible).
-    'db_dsn' => 'sqlite:' . (getenv('PIANISSIMO_DB') ?: __DIR__ . '/data/pianissimo.sqlite'),
-    'db_user' => null,
-    'db_pass' => null,
+    // MySQL/MariaDB (for more traffic): PIANISSIMO_DB_DSN=mysql:host=…;dbname=…;charset=utf8mb4
+    'db_dsn' => getenv('PIANISSIMO_DB_DSN') ?: 'sqlite:' . (getenv('PIANISSIMO_DB') ?: __DIR__ . '/data/pianissimo.sqlite'),
+    'db_user' => getenv('PIANISSIMO_DB_USER') ?: null,
+    'db_pass' => getenv('PIANISSIMO_DB_PASS') ?: null,
 
     'session_name' => 'pianissimo_sid',
     'session_days' => 30,
@@ -25,7 +26,19 @@ $defaults = [
     // limits
     'max_score_bytes' => 2 * 1024 * 1024,
     'max_scores_per_user' => 500,
+    // wrong passwords per account (and other account actions per address) in 15 minutes
     'auth_attempts_per_15min' => 10,
+    // per IP address in 15 minutes: wrong passwords on any account, and new accounts
+    // (a classroom often shares one address)
+    'auth_attempts_per_ip_15min' => 50,
+    'registrations_per_ip_15min' => 30,
+
+    // behind a reverse proxy, CDN or load balancer: its addresses (or CIDR ranges), so the
+    // visitor's own address (for rate limits) and HTTPS are taken from the forwarded headers.
+    // Comma-separated in the environment, e.g. "127.0.0.1, 10.0.0.0/8". Empty = no proxy.
+    'trusted_proxies' => array_values(array_filter(array_map('trim', explode(',', (string) getenv('PIANISSIMO_TRUSTED_PROXIES'))))),
+    // the header with the visitor's address: X-Forwarded-For, or e.g. CF-Connecting-IP (Cloudflare)
+    'client_ip_header' => getenv('PIANISSIMO_CLIENT_IP_HEADER') ?: 'X-Forwarded-For',
 
     // live co-editing (realtime/server.mjs). Empty URL = off; the secret must match the service's
     'realtime_url' => getenv('PIANISSIMO_REALTIME_URL') ?: '',
@@ -37,6 +50,15 @@ $defaults = [
     'site_url' => getenv('PIANISSIMO_SITE_URL') ?: '',
     // write emails to this file instead of sending them (development, tests)
     'mail_log' => getenv('PIANISSIMO_MAIL_LOG') ?: '',
+    // send through a mail service over SMTP (recommended; without it PHP's mail() is used).
+    // smtp_secure: tls = STARTTLS (port 587), ssl = TLS from the start (port 465), none = plain
+    'smtp_host' => getenv('PIANISSIMO_SMTP_HOST') ?: '',
+    'smtp_port' => (int) (getenv('PIANISSIMO_SMTP_PORT') ?: 0) ?: null,
+    'smtp_secure' => getenv('PIANISSIMO_SMTP_SECURE') ?: 'tls',
+    'smtp_user' => getenv('PIANISSIMO_SMTP_USER') ?: '',
+    'smtp_pass' => getenv('PIANISSIMO_SMTP_PASS') ?: '',
+    // only people who confirmed their email may comment or list scores publicly (needs email set up)
+    'require_verified_email' => (bool) getenv('PIANISSIMO_REQUIRE_VERIFIED_EMAIL'),
 
     // scanning sheet music: an engine on the server, e.g. Audiveris:
     //   audiveris -batch -export -output {out} {in}
@@ -46,6 +68,15 @@ $defaults = [
 
     // people who may review reported content (admin.html), by account email
     'admins' => array_values(array_filter(array_map('trim', explode(',', strtolower((string) getenv('PIANISSIMO_ADMINS')))))),
+
+    // crash reports: browsers send unexpected errors to the API (no personal data; see Monitor.php),
+    // admins read them in admin.html. alert_webhook (https://…) also posts each new error to a chat
+    'error_reports' => getenv('PIANISSIMO_ERROR_REPORTS') !== '0',
+    'alert_webhook' => getenv('PIANISSIMO_ALERT_WEBHOOK') ?: '',
+
+    // backups by server/cron/backup.php: folder (default server/data/backups) and how many to keep
+    'backup_dir' => getenv('PIANISSIMO_BACKUP_DIR') ?: '',
+    'backup_keep' => (int) (getenv('PIANISSIMO_BACKUP_KEEP') ?: 14),
 
     // show exception messages in API errors (never enable in production)
     'debug' => (bool) getenv('PIANISSIMO_DEBUG'),

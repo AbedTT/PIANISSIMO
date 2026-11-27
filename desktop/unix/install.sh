@@ -81,6 +81,11 @@ EOF
 </dict>
 </plist>
 EOF
+  # files from a download carry Apple's quarantine flag, which makes Gatekeeper refuse to open the
+  # app ("cannot be opened because the developer cannot be verified"). You chose to install it by
+  # running this script, so clear the flag, and give the app a local (ad-hoc) signature.
+  xattr -dr com.apple.quarantine "$APP" >/dev/null 2>&1 || true
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
   touch "$APP"
   say "Done. Open Pianissimo from Launchpad, Spotlight or ~/Applications."
   say "To remove it: sh \"$APP/Contents/Resources/uninstall.sh\""

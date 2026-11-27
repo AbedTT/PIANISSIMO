@@ -1,19 +1,27 @@
 import type { Score } from '../model/types';
+import { FONT_URLS } from '../render/fonts';
 import { renderScore } from '../render/renderer';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-/** VexFlow's music (Bravura) and text (Academico) fonts as data URLs, loaded only when exporting. */
+/** A font file as a data URL (the built fonts are separate .woff2 files; in development they are data URLs already). */
+async function inline(url: string): Promise<string> {
+  if (url.startsWith('data:')) return url;
+  const blob = await (await fetch(url)).blob();
+  return new Promise((ok, fail) => {
+    const reader = new FileReader();
+    reader.onload = () => ok(String(reader.result));
+    reader.onerror = () => fail(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** VexFlow's music (Bravura) and text (Academico) fonts as data URLs, so exported images carry them. */
 async function fontFaces(): Promise<string> {
-  const [bravura, academico] = await Promise.all([
-    // @ts-expect-error: VexFlow ships its fonts as plain JS modules without type declarations
-    import('../../node_modules/vexflow/build/esm/src/fonts/bravura.js'),
-    // @ts-expect-error: same as above
-    import('../../node_modules/vexflow/build/esm/src/fonts/academico.js'),
-  ]);
+  const [bravura, academico] = await Promise.all([inline(FONT_URLS.Bravura), inline(FONT_URLS.Academico)]);
   return (
-    `@font-face{font-family:Bravura;src:url(${bravura.Bravura}) format('woff2');}` +
-    `@font-face{font-family:Academico;src:url(${academico.Academico}) format('woff2');}`
+    `@font-face{font-family:Bravura;src:url(${bravura}) format('woff2');}` +
+    `@font-face{font-family:Academico;src:url(${academico}) format('woff2');}`
   );
 }
 

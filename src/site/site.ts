@@ -1,8 +1,12 @@
+import { startErrorReporting } from '../monitor/errors';
 import './site.css';
 import { api, type PublicScore } from '../cloud/api';
 import { COMMANDS, prettyKey, type Command } from '../editor/commands';
 import { currentLang, LANGUAGES, setLang, siteText, t, tLabel, translateSite, type Lang } from '../ui/i18n';
 import { registerServiceWorker } from '../pwa/register';
+
+// unexpected errors from here on reach the admins (admin.html)
+startErrorReporting();
 
 const NAV = [
   { href: 'index.html', label: 'Home', page: 'home', key: 'nav.home' },
@@ -220,6 +224,36 @@ async function adminPage() {
       b.addEventListener('click', async () => {
         const row = b.closest<HTMLElement>('tr')!;
         await api.moderate(row.dataset.kind as 'comment' | 'score', Number(row.dataset.id), b.dataset.act as 'restore' | 'dismiss' | 'remove');
+        void load();
+      }),
+    );
+  };
+  await load().catch((err) => (host.innerHTML = `<div class="empty">${esc((err as Error).message)}</div>`));
+  await adminErrors();
+}
+
+/** admin.html: errors from browsers and the server, grouped, newest first. */
+async function adminErrors() {
+  const host = document.getElementById('adminErrors');
+  if (!host) return;
+  const load = async () => {
+    const { errors } = await api.adminErrors();
+    host.innerHTML = errors.length
+      ? `<p><button class="btn btn-ghost btn-small" data-clear="all">Clear all</button></p>
+        <table class="report-table"><tr><th>Error</th><th>Times</th><th>Where</th><th></th></tr>${errors
+          .map(
+            (e) => `<tr data-id="${e.id}">
+              <td><span class="kind">${e.source === 'server' ? '🖥 Server' : '🌐 Browser'}</span> <b>${esc(e.message)}</b>
+                ${e.stack ? `<details><summary>Stack</summary><pre class="stack">${esc(e.stack)}</pre></details>` : ''}</td>
+              <td>${e.count}<br /><small>first ${new Date(e.first_seen).toLocaleString()}<br />last ${new Date(e.last_seen).toLocaleString()}</small></td>
+              <td>${esc(e.page)}<br /><small>${esc([e.version && `v${e.version}`, e.browser].filter(Boolean).join(' · '))}</small></td>
+              <td class="actions"><button class="btn btn-ghost btn-small" data-clear="${e.id}">Fixed</button></td></tr>`,
+          )
+          .join('')}</table>`
+      : '<div class="empty">No errors reported. 🎉</div>';
+    host.querySelectorAll<HTMLButtonElement>('[data-clear]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        await api.clearErrors(b.dataset.clear === 'all' ? undefined : Number(b.dataset.clear));
         void load();
       }),
     );

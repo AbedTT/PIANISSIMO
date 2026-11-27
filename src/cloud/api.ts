@@ -11,10 +11,26 @@ export const API_BASE: string =
 
 export type Visibility = 'private' | 'unlisted' | 'public';
 
+/** A group of identical errors, from people's browsers or the API (admin.html). */
+export interface ErrorReport {
+  id: number;
+  source: 'client' | 'server';
+  message: string;
+  stack: string;
+  page: string;
+  version: string;
+  browser: string;
+  count: number;
+  first_seen: string;
+  last_seen: string;
+}
+
 export interface User {
   id: number;
   email: string;
   name: string;
+  /** the email address was confirmed with the link the server sent */
+  verified?: boolean;
   /** may review reported content (admin.html) */
   admin?: boolean;
 }
@@ -214,11 +230,20 @@ async function call<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, 
 }
 
 export const api = {
-  me: () => call<{ user: User | null }>('GET', '/auth/me'),
+  /** `mail`: the server can send emails (password reset, confirming the address). */
+  me: () => call<{ user: User | null; mail?: boolean }>('GET', '/auth/me'),
   register: (name: string, email: string, password: string) =>
     call<{ user: User }>('POST', '/auth/register', { name, email, password }),
   login: (email: string, password: string) => call<{ user: User }>('POST', '/auth/login', { email, password }),
   logout: () => call<{ ok: true }>('POST', '/auth/logout', {}),
+  /** Email a link for choosing a new password (same answer whether or not the address has an account). */
+  forgotPassword: (email: string) => call<{ ok: true }>('POST', '/auth/forgot', { email }),
+  /** Set a new password with the token from that link; signs in. */
+  resetPassword: (token: string, password: string) => call<{ user: User }>('POST', '/auth/reset', { token, password }),
+  verifyEmail: (token: string) => call<{ ok: true; user: User | null }>('POST', '/auth/verify', { token }),
+  /** Send a new confirmation link; `sent` is false when there is nothing to confirm or too many were sent. */
+  resendVerification: () => call<{ sent: boolean }>('POST', '/account/verify', {}),
+  changePassword: (current: string, password: string) => call<{ user: User }>('POST', '/account/password', { current, password }),
   /** Everything stored about the signed-in person. */
   exportAccount: () => call<{ data: unknown }>('GET', '/account/export'),
   deleteAccount: (password: string) => call<{ ok: true }>('POST', '/account/delete', { password }),
@@ -283,6 +308,11 @@ export const api = {
   /** The language emails are written in. */
   setLanguage: (lang: string) => call<{ ok: true }>('POST', '/account/language', { lang }),
   adminReports: () => call<{ reports: Report[] }>('GET', '/admin/reports'),
+  /** An unexpected error in this page (src/monitor/errors.ts). */
+  reportError: (report: { message: string; stack: string; page: string; version: string }) => call<{ ok: true }>('POST', '/errors', report),
+  adminErrors: () => call<{ errors: ErrorReport[] }>('GET', '/admin/errors'),
+  /** Remove one error report (or all of them) once dealt with. */
+  clearErrors: (id?: number) => call<{ ok: true }>('DELETE', id ? `/admin/errors/${id}` : '/admin/errors'),
   moderate: (kind: Report['kind'], id: number, action: 'restore' | 'dismiss' | 'remove') =>
     call<{ ok: true }>('POST', `/admin/reports/${kind}/${id}`, { action }),
 };

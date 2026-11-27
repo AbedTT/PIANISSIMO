@@ -24,7 +24,7 @@ final class Account
             $st->execute($args);
             return $st->fetchAll();
         };
-        $user = $one('SELECT id, name, email, created_at, notify_email, lang FROM users WHERE id = ?', [$userId])[0] ?? null;
+        $user = $one('SELECT id, name, email, created_at, email_verified_at, notify_email, lang FROM users WHERE id = ?', [$userId])[0] ?? null;
         if (!$user) {
             throw new HttpError(404, 'Account not found.');
         }

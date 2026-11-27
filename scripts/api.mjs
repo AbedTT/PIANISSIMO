@@ -14,4 +14,13 @@ if (!php) {
 }
 const port = process.env.API_PORT ?? '8000';
 console.log(`Pianissimo API: http://localhost:${port}/server/api/index.php/health  (${php})`);
-spawn(php, ['-S', `localhost:${port}`, '-t', root], { stdio: 'inherit', cwd: root });
+// development email: written to a file instead of being sent, with links to the dev server,
+// so "Forgot your password?" and the confirmation link can be tried locally
+const env = { ...process.env };
+if (!env.PIANISSIMO_MAIL_FROM && !env.PIANISSIMO_SMTP_HOST) {
+  env.PIANISSIMO_MAIL_FROM = 'Pianissimo (dev) <dev@localhost>';
+  env.PIANISSIMO_MAIL_LOG ??= resolve(root, 'server/data/dev-mail.log');
+  env.PIANISSIMO_SITE_URL ??= `http://localhost:${process.env.WEB_PORT ?? 5173}/`;
+  console.log(`Emails are written to ${env.PIANISSIMO_MAIL_LOG}`);
+}
+spawn(php, ['-S', `localhost:${port}`, '-t', root], { stdio: 'inherit', cwd: root, env });

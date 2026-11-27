@@ -1,0 +1,7 @@
+{
+  // The tests are type-checked too (npm run typecheck): they run in Node, so they also see its types.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "node"] },
+  "include": ["src"],
+  "exclude": []
+}

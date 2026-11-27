@@ -1,6 +1,6 @@
 {
   "name": "pianissimo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Pianissimo - fast, keyboard-first music notation editor",
   "type": "module",
@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint": "npm run typecheck && node scripts/lint.mjs",
     "api": "node scripts/api.mjs",
     "e2e": "node scripts/e2e.mjs",
     "realtime": "node realtime/server.mjs",

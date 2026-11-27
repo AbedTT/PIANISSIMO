@@ -1,3 +1,4 @@
+import './fonts'; // loads Bravura and Academico, and tells VexFlow to use them
 import {
   Accidental,
   Annotation,
@@ -29,7 +30,7 @@ import {
   Voice,
   VoiceMode,
   VoltaType,
-} from 'vexflow';
+} from 'vexflow/core';
 import { contexts, type BarContext } from '../model/context';
 import { drumAt } from '../model/drums';
 import { outOfRange } from '../model/checks';

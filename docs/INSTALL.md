@@ -28,9 +28,8 @@ ask for administrator rights. Start Pianissimo from the Start menu or the deskto
 - **Updating.** Run the newer setup; your scores are kept.
 - **Removing.** Go to *Settings → Apps → Installed apps → Pianissimo → Uninstall*. You are asked whether
   to keep the scores saved on the computer.
-- **"Windows protected your PC".** The setup file is not code-signed yet, so SmartScreen may warn the
-  first time. Click **More info → Run anyway**. Signing it with a code-signing certificate removes the
-  warning (see *Building the installers*).
+- **"Windows protected your PC".** Unless the release was signed (see *Signing*), SmartScreen may warn
+  the first time. Click **More info → Run anyway**.
 - **Scripted installs.** `Pianissimo-Setup-<version>.exe /S` installs silently, and
   `/server=https://…` sets the online server. Uninstall silently with
   `"%LOCALAPPDATA%\Programs\Pianissimo\Pianissimo.exe" --uninstall /S`.
@@ -40,7 +39,9 @@ ask for administrator rights. Start Pianissimo from the Start menu or the deskto
 1. Unpack `Pianissimo-<version>-macos-linux.tar.gz` (double-click it in Finder).
 2. In Terminal, run `sh ~/Downloads/Pianissimo-<version>/install.sh`, adjusting the path if needed.
 
-This creates **Pianissimo** in `~/Applications`, so Launchpad and Spotlight find it.
+This creates **Pianissimo** in `~/Applications`, so Launchpad and Spotlight find it. Because you
+installed it yourself, the script removes the download's quarantine flag and gives the app a local
+signature, so Gatekeeper opens it without the "developer cannot be verified" dialog.
 
 - **Python.** Pianissimo needs Python 3, which comes with Apple's Command Line Tools. If it is missing,
   the script starts their installer (`xcode-select --install`); run the script again afterwards.
@@ -119,6 +120,35 @@ No extra tools or npm packages are needed:
 - The zip, tar.gz and icon files are written by [scripts/package.mjs](../scripts/package.mjs).
 - The version comes from `package.json`.
 
-**Code signing.** To sign the Windows files, run `signtool sign /fd sha256 /a /tr <timestamp-url> /td sha256 <file>`
-on `Pianissimo-Setup-<version>.exe`, using a code-signing certificate. Signing removes the SmartScreen
-warning once the certificate has built up a reputation.
+## Signing
+
+Unsigned Windows programs make SmartScreen say **"Windows protected your PC … unknown publisher"**.
+Signed ones show your name as the publisher.
+
+1. Buy a code-signing certificate from a certificate authority (Sectigo, DigiCert, SSL.com, Certum…),
+   or use Azure Trusted Signing. An **EV** certificate removes the SmartScreen warning at once; a standard
+   (OV) one does so after enough people have installed signed releases.
+2. Install the Windows SDK, which includes `signtool.exe` (or set `SIGNTOOL` to its path).
+3. Build with the certificate. `npm run package` signs `Pianissimo.exe` (before it goes into the setup
+   and the zip) and the setup, with a timestamp so the signature stays valid after the certificate expires:
+
+   ```powershell
+   $env:PIANISSIMO_SIGN_PFX = 'C:\keys\pianissimo.pfx'      # a certificate file …
+   $env:PIANISSIMO_SIGN_PASSWORD = '…'
+   # … or one in the Windows certificate store / on a USB token:
+   # $env:PIANISSIMO_SIGN_THUMBPRINT = '<sha1 thumbprint>'
+   npm run package
+   ```
+
+   Optional: `PIANISSIMO_SIGN_TIMESTAMP` (another timestamp server) and `PIANISSIMO_SIGN_URL`
+   (the "more information" link shown with the signature).
+4. Check it: right-click the setup → **Properties → Digital Signatures**, or
+   `Get-AuthenticodeSignature release\Pianissimo-Setup-<version>.exe` in PowerShell.
+
+Keep the certificate and its password out of the repository (an environment variable or a secret in CI).
+
+**macOS.** The `.tar.gz` contains no compiled program: `install.sh` builds the app on the Mac from
+scripts, clears the quarantine flag and signs it locally (ad hoc), so no Apple Developer ID is needed.
+If you ever ship a ready-made `.app` or `.dmg` instead, sign it with a Developer ID certificate
+(`codesign --options runtime`) and notarize it (`xcrun notarytool submit … --wait`, then
+`xcrun stapler staple`).

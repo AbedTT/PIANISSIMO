@@ -209,6 +209,45 @@ final class Db
             }
         }
 
+        // account recovery (Phase 32): confirmed email, and a counter that a password change
+        // raises so every older session of that account is signed out
+        foreach ([
+            'ALTER TABLE users ADD COLUMN email_verified_at VARCHAR(25) NULL',
+            'ALTER TABLE users ADD COLUMN auth_epoch INTEGER NOT NULL DEFAULT 0',
+        ] as $alter) {
+            try {
+                $pdo->exec($alter);
+            } catch (\PDOException) {
+                // column already exists
+            }
+        }
+        // one-time links sent by email; only a hash of the token is stored
+        $pdo->exec("CREATE TABLE IF NOT EXISTS account_tokens (
+            id $id,
+            user_id $fk NOT NULL,
+            purpose {$str(10)} NOT NULL,
+            token_hash {$str(64)} NOT NULL UNIQUE,
+            created_at {$str(25)} NOT NULL,
+            expires_at {$str(25)} NOT NULL,
+            used_at {$str(25)} NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )$engine");
+
+        // error reports from browsers and the API, grouped (Phase 33)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS error_reports (
+            id $id,
+            fingerprint {$str(64)} NOT NULL UNIQUE,
+            source {$str(10)} NOT NULL,
+            message {$str(500)} NOT NULL,
+            stack $text NOT NULL,
+            page {$str(200)} NOT NULL DEFAULT '',
+            version {$str(20)} NOT NULL DEFAULT '',
+            browser {$str(40)} NOT NULL DEFAULT '',
+            count INTEGER NOT NULL DEFAULT 1,
+            first_seen {$str(25)} NOT NULL,
+            last_seen {$str(25)} NOT NULL
+        )$engine");
+
         $pdo->exec("CREATE TABLE IF NOT EXISTS auth_attempts (
             id $id,
             ip {$str(45)} NOT NULL,
@@ -228,6 +267,8 @@ final class Db
             'CREATE INDEX idx_notifications_user ON notifications(user_id, id)',
             'CREATE INDEX idx_comments_user ON public_comments(user_id, created_at)',
             'CREATE INDEX idx_submissions_score ON submissions(score_id)',
+            'CREATE INDEX idx_tokens_user ON account_tokens(user_id, purpose, created_at)',
+            'CREATE INDEX idx_errors_seen ON error_reports(last_seen)',
         ] as $sql) {
             try {
                 $pdo->exec($driver === 'sqlite' ? str_replace('CREATE INDEX', 'CREATE INDEX IF NOT EXISTS', $sql) : $sql);

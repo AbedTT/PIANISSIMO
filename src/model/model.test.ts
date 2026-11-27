@@ -148,7 +148,7 @@ describe('Editor', () => {
     ed.setDuration('q');
     ed.typeLetter('E');
     ed.typeLetter('F'); // beat 4: one beat left in bar 1
-    for (const l of ['G', 'A', 'B', 'C']) ed.typeLetter(l); // bar 2: G A B C
+    for (const l of ['G', 'A', 'B', 'C'] as const) ed.typeLetter(l); // bar 2: G A B C
     ed.setCursor({ m: 0, s: 0, i: 2 }); // click the F
     expect(ed.current?.pitches[0].step).toBe('F');
     ed.setDuration('h'); // two beats: one in bar 1, one tied into bar 2

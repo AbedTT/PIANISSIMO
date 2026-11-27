@@ -133,9 +133,15 @@ export const LEGAL_BLOCKS: Record<string, [string, string, string]> = {
   ],
   'pv.h.email': ['E-mail', 'Correo', 'E-Mail'],
   'pv.email': [
-    'Nous ne vous écrivons que si le site a activé l’e-mail, et seulement pour des copies de vos notifications (une par événement ou un résumé quotidien, au choix). Vous pouvez couper les e-mails dans le panneau 🔔 de l’éditeur.',
-    'Solo te escribimos si el sitio tiene el correo activado, y solo copias de tus notificaciones (una por aviso o un resumen diario, como prefieras). Puedes desactivar los correos en el panel 🔔 del editor.',
-    'Wir schreiben Ihnen nur, wenn die Website E-Mail eingeschaltet hat, und nur Kopien Ihrer Benachrichtigungen (eine je Ereignis oder eine tägliche Zusammenfassung, wie Sie wählen). Sie können E-Mails im 🔔-Bereich des Editors abschalten.',
+    'Nous ne vous écrivons que si le site a activé l’e-mail : un lien pour confirmer votre adresse à l’inscription, un lien pour choisir un nouveau mot de passe quand vous le demandez, et des copies de vos notifications (une par événement ou un résumé quotidien, au choix). Vous pouvez couper les e-mails de notification dans le panneau 🔔 de l’éditeur.',
+    'Solo te escribimos si el sitio tiene el correo activado: un enlace para confirmar tu dirección al registrarte, un enlace para elegir una nueva contraseña cuando lo pidas y copias de tus notificaciones (una por aviso o un resumen diario, como prefieras). Puedes desactivar los correos de notificación en el panel 🔔 del editor.',
+    'Wir schreiben Ihnen nur, wenn die Website E-Mail eingeschaltet hat: einen Link zur Bestätigung Ihrer Adresse bei der Anmeldung, einen Link für ein neues Passwort, wenn Sie danach fragen, und Kopien Ihrer Benachrichtigungen (eine je Ereignis oder eine tägliche Zusammenfassung, wie Sie wählen). Benachrichtigungs-E-Mails können Sie im 🔔-Bereich des Editors abschalten.',
+  ],
+  'pv.h.errors': ['Rapports d’erreur', 'Informes de errores', 'Fehlerberichte'],
+  'pv.errors': [
+    'Quand quelque chose ne marche pas dans l’éditeur ou sur le site, un court rapport technique part vers le serveur du site pour que le problème soit corrigé : le message d’erreur, l’endroit dans le code du programme, le nom de la page, la version de Pianissimo et le nom et la version du navigateur. Il ne contient jamais vos partitions, votre nom ni votre adresse e-mail, et les administrateurs du site suppriment les rapports une fois le problème corrigé.',
+    'Cuando algo falla en el editor o en el sitio, se envía un breve informe técnico al servidor del sitio para poder arreglarlo: el mensaje de error, el lugar en el código del programa, el nombre de la página, la versión de Pianissimo y el nombre y la versión del navegador. Nunca contiene tus partituras, tu nombre ni tu correo, y los administradores del sitio borran los informes cuando el problema está resuelto.',
+    'Wenn im Editor oder auf der Website etwas schiefgeht, geht ein kurzer technischer Bericht an den Server der Website, damit der Fehler behoben werden kann: die Fehlermeldung, die Stelle im Programmcode, der Seitenname, die Pianissimo-Version sowie Name und Version des Browsers. Er enthält nie Ihre Partituren, Ihren Namen oder Ihre E-Mail-Adresse, und die Administratoren der Website löschen Berichte, sobald der Fehler behoben ist.',
   ],
   'pv.h.scan': ['Numériser des partitions', 'Escanear partituras', 'Noten scannen'],
   'pv.scan': [

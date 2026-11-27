@@ -21,9 +21,9 @@ describe('the toolbar follows the selected note', () => {
     expect([ed.inputType, ed.inputDots]).toEqual(['h', 1]);
     // a rest keeps the chosen length, so typing into empty bars works as before
     const empty = new Editor(newScore({ measures: 1, staves: [{ clef: 'treble' }] }));
-    empty.setDuration('e');
+    empty.setDuration('8');
     empty.setCursor({ m: 0, s: 0, i: 0 });
-    expect(empty.inputType).toBe('e');
+    expect(empty.inputType).toBe('8');
   });
 });
 
@@ -31,7 +31,7 @@ describe('combining voices into chords', () => {
   /** Bar 1: voice 1 C5 D5 E5 F5, voice 2 A4 B4 (same rhythm) then a half note G4 (different rhythm). */
   function satb() {
     const ed = new Editor(newScore({ measures: 2, staves: [{ clef: 'treble' }] }));
-    for (const l of ['C', 'D', 'E', 'F']) ed.typeLetter(l);
+    for (const l of ['C', 'D', 'E', 'F'] as const) ed.typeLetter(l);
     ed.setCursor({ m: 0, s: 0, i: 0 });
     ed.toggleVoice(1);
     ed.typeLetter('A');
@@ -57,10 +57,10 @@ describe('combining voices into chords', () => {
 
   it('removes voice 2 when everything was combined, and undo brings it back', () => {
     const ed = new Editor(newScore({ measures: 1, staves: [{ clef: 'treble' }] }));
-    for (const l of ['E', 'F', 'G', 'A']) ed.typeLetter(l);
+    for (const l of ['E', 'F', 'G', 'A'] as const) ed.typeLetter(l);
     ed.setCursor({ m: 0, s: 0, i: 0 });
     ed.toggleVoice(1);
-    for (const l of ['C', 'D', 'E', 'F']) ed.typeLetter(l);
+    for (const l of ['C', 'D', 'E', 'F'] as const) ed.typeLetter(l);
     expect(ed.combineVoices()).toBe(4);
     expect(laneOf(ed.score.measures[0], 0, 1)).toBeFalsy();
     expect(lane(ed.score, 0, 0, 0).every((e) => e.pitches.length === 2)).toBe(true);

@@ -1,0 +1,33 @@
+# Security and caching headers for the web pages (Apache with mod_headers; XAMPP has it on).
+# Nginx and other servers: see docs/DEPLOY.md, "Security headers".
+# Every page also carries its Content-Security-Policy in a <meta> tag (vite.config.ts);
+# frame-ancestors only works as a header, so it is set here.
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  # the tuner and recording use the microphone; MIDI keyboards use Web MIDI
+  Header always set Permissions-Policy "camera=(), geolocation=(), payment=(), usb=(), microphone=(self), midi=(self)"
+  # other sites may not show these pages in a frame (against clickjacking) ...
+  Header always set Content-Security-Policy "frame-ancestors 'self'"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  # ... except the compact player, which is made for embedding
+  <Files "embed.html">
+    Header always set Content-Security-Policy "frame-ancestors *"
+    Header always unset X-Frame-Options
+  </Files>
+  # browsers remember to use HTTPS only (sent on HTTPS requests only)
+  Header always set Strict-Transport-Security "max-age=31536000" env=HTTPS
+
+  # pages and the service worker: always check for a new version
+  <FilesMatch "(\.html|^sw\.js|\.webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+
+# built assets have a content hash in their name: cache them for a year
+<IfModule mod_headers.c>
+  <If "%{REQUEST_URI} =~ m#/assets/#">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </If>
+</IfModule>

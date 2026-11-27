@@ -6,7 +6,7 @@
 // Starts `vite preview` and, when PHP is available, a throw-away PHP API (SQLite in a temp
 // folder). Set CHROME_PATH if Chrome or Chromium is not found automatically.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,13 @@ const RT_SECRET = `e2e-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 const ADMIN_EMAIL = `admin-${Date.now()}@example.com`;
 const BASE = `http://localhost:${WEB_PORT}`;
 const tmp = mkdtempSync(join(tmpdir(), 'pianissimo-e2e-'));
+const MAIL_LOG = join(tmp, 'mail.log');
+/** The last link of this kind emailed to this address. */
+const emailedLink = (to, kind) => {
+  const log = existsSync(MAIL_LOG) ? readFileSync(MAIL_LOG, 'utf8') : '';
+  const mail = log.split('-----').filter((m) => m.includes(`To: ${to}`) && m.includes(`#${kind}=`)).pop();
+  return mail?.match(new RegExp(`https?://\\S+#${kind}=[0-9a-f]{64}`))?.[0] ?? null;
+};
 const children = [];
 
 // ------------------------------------------------------------------ processes
@@ -193,6 +200,7 @@ class Browser {
     const page = new Page(this, sessionId, targetId);
     await page.send('Page.enable');
     await page.send('Runtime.enable');
+    await page.send('Log.enable'); // Content-Security-Policy violations arrive as log entries
     return page;
   }
 
@@ -230,6 +238,8 @@ class Page {
         void browser.send('Page.handleJavaScriptDialog', { accept: true, promptText: this.promptText }, sessionId);
       }
       if (msg.method === 'Runtime.exceptionThrown') this.errors.push(msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
+      // anything the security policy blocked is a failure: the page would be broken in production
+      if (msg.method === 'Log.entryAdded' && /Content Security Policy/i.test(msg.params.entry.text)) this.errors.push(msg.params.entry.text);
     });
   }
 
@@ -678,6 +688,17 @@ test(
       await alice.waitFor(`document.querySelector('.report-table')?.textContent.includes('spam ${stamp}')`, 'admin sees the report');
       await alice.eval(`document.querySelector('.report-table [data-act=remove]').click()`);
       await alice.waitFor(`!document.querySelector('.report-table')?.textContent.includes('spam ${stamp}')`, 'removed');
+      // a crash in someone's browser reaches the admins' error list (and only that one is expected)
+      await alice.eval(`setTimeout(() => { throw new TypeError('E2E crash ${stamp}'); }), true`);
+      for (let i = 0; i < 50; i++) {
+        const { data } = await apiIn(alice, 'GET', '/admin/errors');
+        if (data.errors?.some((e) => e.message.includes(`E2E crash ${stamp}`))) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      alice.errors = alice.errors.filter((e) => !e.includes('E2E crash'));
+      await alice.goto('/admin.html');
+      await alice.waitFor(`document.getElementById('adminErrors').textContent.includes('TypeError: E2E crash ${stamp}')`, 'admin sees the crash report');
+      assert(await alice.eval(`document.getElementById('adminErrors').textContent.includes('admin.html')`), 'with the page it happened on');
       const left = await apiIn(bob, 'GET', `/public/${created.slug}/comments`);
       assert(left.data.comments.length === 0, 'the comment is gone');
       await bob.goto('/admin.html');
@@ -710,6 +731,59 @@ test(
     await page.waitFor(`document.getElementById('title').value === 'Scanned page'`, 'the recognised score is open', 20000);
     const steps = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures[0].staves[0].map((e) => e.pitches[0]?.step).join('')`);
     assert(steps === 'CDEF', `recognised notes: ${steps}`);
+  },
+  { needsApi: true },
+);
+
+test(
+  'account: forgot the password, reset it from the emailed link; confirm the email',
+  async (page) => {
+    const email = `forgetful-${Date.now()}@example.com`;
+    await page.goto('/app.html');
+    await page.waitFor(`document.querySelector('#score svg')`);
+    await page.eval(`document.getElementById('signInBtn').click()`);
+    await page.eval(`document.querySelector('[data-auth=register]').click()`);
+    await page.eval(`(() => {
+      const f = document.getElementById('authForm');
+      f.elements.name.value = 'Forgetful';
+      f.elements.email.value = ${JSON.stringify(email)};
+      f.elements.password.value = 'first password';
+      f.requestSubmit();
+    })()`);
+    await page.waitFor(`document.getElementById('authModal').hidden && !document.getElementById('accountMenu').hidden`, 'signed up');
+    assert(!(await page.eval(`document.getElementById('verifyEmailBtn').hidden`)), 'offers to confirm the email');
+    // the confirmation link from the welcome email
+    const verify = emailedLink(email, 'verify');
+    assert(verify?.startsWith(`${BASE}/app.html#verify=`), `confirmation link: ${verify}`);
+    // a new query string makes it a real page load (a changed #hash alone would not reload)
+    await page.goto(verify.slice(BASE.length).replace('#', '?n=1#'));
+    await page.waitFor(`document.getElementById('toast').textContent.includes('confirmed')`, 'email confirmed');
+    assert(await page.eval(`document.getElementById('verifyEmailBtn').hidden && location.hash === ''`), 'confirmed, and the token left the address bar');
+    await page.eval(`document.getElementById('signOutBtn').click()`);
+    await page.waitFor(`!document.getElementById('signInBtn').hidden`, 'signed out');
+
+    // forgot: ask for a link
+    await page.eval(`document.getElementById('signInBtn').click()`);
+    await page.eval(`document.getElementById('authForgot').click()`);
+    assert(await page.eval(`document.getElementById('authPasswordRow').hidden && !document.getElementById('authEmailRow').hidden`), 'only the email is asked');
+    await page.eval(`(() => { const f = document.getElementById('authForm'); f.elements.email.value = ${JSON.stringify(email)}; f.requestSubmit(); })()`);
+    await page.waitFor(`!document.getElementById('authDone').hidden`, 'link sent message');
+    const reset = emailedLink(email, 'reset');
+    assert(reset, 'a reset link was emailed');
+
+    // open it: choose a new password and be signed in
+    await page.goto(reset.slice(BASE.length).replace('#', '?n=2#'));
+    await page.waitFor(`!document.getElementById('authModal').hidden && !document.getElementById('authPasswordRow').hidden && document.getElementById('authEmailRow').hidden`, 'new password form');
+    assert(await page.eval(`location.hash === ''`), 'the token left the address bar');
+    await page.eval(`(() => { const f = document.getElementById('authForm'); f.elements.password.value = 'second password'; f.requestSubmit(); })()`);
+    await page.waitFor(`document.getElementById('authModal').hidden && !document.getElementById('accountMenu').hidden`, 'signed in with the new password');
+
+    // change it again from the account menu
+    await page.eval(`document.getElementById('changePasswordBtn').click()`);
+    await page.eval(`(() => { const f = document.getElementById('authForm'); f.elements.current.value = 'wrong one!'; f.elements.password.value = 'third password'; f.requestSubmit(); })()`);
+    await page.waitFor(`!document.getElementById('authError').hidden`, 'wrong current password refused');
+    await page.eval(`(() => { const f = document.getElementById('authForm'); f.elements.current.value = 'second password'; f.requestSubmit(); })()`);
+    await page.waitFor(`document.getElementById('authModal').hidden`, 'password changed');
   },
   { needsApi: true },
 );
@@ -950,6 +1024,10 @@ async function main() {
           PIANISSIMO_REALTIME_URL: `ws://localhost:${RT_PORT}`,
           PIANISSIMO_REALTIME_SECRET: RT_SECRET,
           PIANISSIMO_ADMINS: ADMIN_EMAIL,
+          // emails (password reset, confirmation) are written to a file the tests read
+          PIANISSIMO_MAIL_FROM: 'Pianissimo <music@example.com>',
+          PIANISSIMO_MAIL_LOG: MAIL_LOG,
+          PIANISSIMO_SITE_URL: `${BASE}/`,
           // a stand-in for Audiveris (writes a fixed C D E F score)
           PIANISSIMO_OMR_COMMAND: `"${process.execPath}" "${join(root, 'scripts/fake-omr.mjs')}" {in} {out}`,
         },

@@ -1,7 +1,11 @@
+import { startErrorReporting } from './monitor/errors';
 import { Player } from './audio/player';
 import { api } from './cloud/api';
 import type { Score } from './model/types';
 import { renderScore, type Layout } from './render/renderer';
+
+// unexpected errors from here on reach the admins (admin.html)
+startErrorReporting();
 
 /**
  * Compact player for an `<iframe>` on another site: embed.html?s=<share slug>.

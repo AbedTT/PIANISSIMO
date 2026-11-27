@@ -1,3 +1,4 @@
+import { startErrorReporting } from './monitor/errors';
 import { Player } from './audio/player';
 import { api, ApiError, type PublicComment, type PublicScore, type User } from './cloud/api';
 import { fromMusicXML, toMusicXML } from './io/musicxml';
@@ -5,6 +6,9 @@ import { readMxl } from './io/mxl';
 import type { Score } from './model/types';
 import { buildPrintPages, PAGE_SIZES } from './render/print';
 import { renderScore, type Layout } from './render/renderer';
+
+// unexpected errors from here on reach the admins (admin.html)
+startErrorReporting();
 
 /** Key the editor reads on start-up to import a score (see main.ts). */
 export const IMPORT_KEY = 'pianissimo:import';

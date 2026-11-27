@@ -31,14 +31,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint PHP
-        run: find server -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Check the realtime service and scripts parse
+        run: for f in realtime/server.mjs scripts/*.mjs; do node --check "$f"; done
 
-      - name: Check the realtime service and e2e script parse
-        run: node --check realtime/server.mjs && node --check scripts/e2e.mjs
-
-      - name: Type-check
-        run: npm run typecheck
+      # type-checks the app and the tests, then scripts/lint.mjs (project rules, php -l)
+      - name: Lint and type-check
+        run: npm run lint
 
       - name: Unit and API tests
         run: npm test
@@ -56,3 +54,41 @@ jobs:
           name: dist
           path: dist
           retention-days: 7
+
+  # the same API tests (including backup and restore) on MySQL, which larger sites use
+  mysql:
+    name: API tests on MySQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: pianissimo_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_sqlite, pdo_mysql, mbstring
+          coverage: none
+
+      - run: npm ci
+
+      - name: API tests on MySQL 8
+        run: npx vitest run src/cloud/server.test.ts
+        env:
+          TEST_DB_DSN: mysql:host=127.0.0.1;port=3306;dbname=pianissimo_test;charset=utf8mb4
+          TEST_DB_USER: root
+          TEST_DB_PASS: root

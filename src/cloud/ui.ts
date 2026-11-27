@@ -1,5 +1,6 @@
 import type { Editor } from '../editor/editor';
 import type { Score } from '../model/types';
+import { t } from '../ui/i18n';
 import { api, ApiError, embedCode, shareUrl, type ScoreMeta, type User, type Visibility } from './api';
 
 const CLOUD_ID_KEY = 'pianissimo:cloudId';
@@ -14,6 +15,8 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
  * The current score is linked to a cloud copy by id once saved; after that,
  * changes sync automatically a few seconds after you stop editing.
  */
+type AuthMode = 'login' | 'register' | 'forgot' | 'reset' | 'change';
+
 export class Cloud {
   user: User | null = null;
   /** Cloud id of the score in the editor (null = not saved to the library yet). */
@@ -58,9 +61,19 @@ export class Cloud {
     window.addEventListener('offline', () => this.onChange());
   }
 
+  /** The server can send emails (password reset and confirmation links). */
+  mailAvailable = false;
+
   async init() {
+    await this.loadAccount();
+    await this.followEmailLink();
+  }
+
+  private async loadAccount() {
     try {
-      this.user = (await api.me()).user;
+      const me = await api.me();
+      this.user = me.user;
+      this.mailAvailable = !!me.mail;
     } catch (err) {
       // offline or no server: the editor still works locally. Keep the link to the cloud copy,
       // so saving resumes when the 'online' event retries init
@@ -212,13 +225,18 @@ export class Cloud {
         <div class="modal-card">
           <header><h2 id="authTitle">Sign in</h2><button class="close" data-close>✕</button></header>
           <p class="hint" id="authReason"></p>
-          <div class="seg"><button type="button" data-auth="login" class="on">Sign in</button><button type="button" data-auth="register">Create account</button></div>
+          <div class="seg" id="authTabs"><button type="button" data-auth="login" class="on">Sign in</button><button type="button" data-auth="register">Create account</button></div>
           <form id="authForm" class="auth-form">
+            <p class="hint" id="authHelp" hidden></p>
             <label id="authNameRow" hidden>Your name <input name="name" autocomplete="name" maxlength="60" /></label>
-            <label>Email <input name="email" type="email" autocomplete="email" required /></label>
-            <label>Password <input name="password" type="password" autocomplete="current-password" minlength="8" required /></label>
+            <label id="authEmailRow">Email <input name="email" type="email" autocomplete="email" required /></label>
+            <label id="authCurrentRow" hidden>Current password <input name="current" type="password" autocomplete="current-password" /></label>
+            <label id="authPasswordRow"><span id="authPasswordLabel">Password</span> <input name="password" type="password" autocomplete="current-password" minlength="8" required /></label>
             <p class="form-error" id="authError" hidden></p>
+            <p class="form-ok" id="authDone" role="status" hidden></p>
             <button type="submit" class="primary" id="authSubmit">Sign in</button>
+            <button type="button" class="link-btn" id="authForgot">Forgot your password?</button>
+            <button type="button" class="link-btn" id="authBack" hidden>← Back to sign in</button>
           </form>
         </div>
       </div>
@@ -309,38 +327,49 @@ export class Cloud {
       });
     }
 
-    // auth
-    let mode: 'login' | 'register' = 'login';
-    const setMode = (m: typeof mode) => {
-      mode = m;
-      this.el('authModal').querySelectorAll<HTMLButtonElement>('[data-auth]').forEach((b) => b.classList.toggle('on', b.dataset.auth === m));
-      this.el('authNameRow').hidden = m === 'login';
-      this.el('authTitle').textContent = m === 'login' ? 'Sign in' : 'Create your free account';
-      this.el('authSubmit').textContent = m === 'login' ? 'Sign in' : 'Create account';
-      this.el<HTMLInputElement>('authForm').querySelector<HTMLInputElement>('[name=password]')!.autocomplete =
-        m === 'login' ? 'current-password' : 'new-password';
-      this.el('authError').hidden = true;
-    };
+    // auth: one dialog for signing in, creating an account and the password pages
     this.el('authModal').querySelectorAll<HTMLButtonElement>('[data-auth]').forEach((b) =>
-      b.addEventListener('click', () => setMode(b.dataset.auth as typeof mode)),
+      b.addEventListener('click', () => this.authMode(b.dataset.auth as AuthMode)),
     );
+    this.el('authForgot').addEventListener('click', () => this.authMode('forgot'));
+    this.el('authBack').addEventListener('click', () => this.authMode('login'));
     this.el<HTMLFormElement>('authForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const f = new FormData(e.target as HTMLFormElement);
-      const email = String(f.get('email'));
-      const password = String(f.get('password'));
+      const form = e.target as HTMLFormElement;
+      const f = new FormData(form);
+      const email = String(f.get('email') ?? '');
+      const password = String(f.get('password') ?? '');
       const err = this.el('authError');
       err.hidden = true;
+      const mode = this.mode;
+      const submit = this.el<HTMLButtonElement>('authSubmit');
+      submit.disabled = true;
       try {
-        this.user =
-          mode === 'login'
-            ? (await api.login(email, password)).user
-            : (await api.register(String(f.get('name') || email.split('@')[0]), email, password)).user;
+        if (mode === 'forgot') {
+          await api.forgotPassword(email);
+          const done = this.el('authDone');
+          done.textContent = t('If an account uses that email, a link to choose a new password is on its way. It works for one hour.');
+          done.hidden = false;
+          return;
+        }
+        if (mode === 'reset') {
+          this.user = (await api.resetPassword(this.resetToken, password)).user;
+          this.resetToken = '';
+          this.toast('Your new password is saved and you are signed in');
+        } else if (mode === 'change') {
+          this.user = (await api.changePassword(String(f.get('current') ?? ''), password)).user;
+          this.toast('Password changed. Your other devices are signed out.');
+        } else if (mode === 'login') {
+          this.user = (await api.login(email, password)).user;
+          this.toast(`Signed in as ${this.user.name}`);
+        } else {
+          this.user = (await api.register(String(f.get('name') || email.split('@')[0]), email, password)).user;
+          this.toast(this.mailAvailable ? 'Welcome! We sent you a link to confirm your email address.' : `Signed in as ${this.user.name}`);
+        }
         this.el('authModal').hidden = true;
-        (e.target as HTMLFormElement).reset();
-        this.toast(`Signed in as ${this.user.name}`);
+        form.reset();
         this.onChange();
-        if (this.afterAuth) {
+        if (this.afterAuth && (mode === 'login' || mode === 'register' || mode === 'reset')) {
           const next = this.afterAuth;
           this.afterAuth = null;
           await next();
@@ -348,6 +377,8 @@ export class Cloud {
       } catch (ex) {
         err.textContent = (ex as Error).message;
         err.hidden = false;
+      } finally {
+        submit.disabled = false;
       }
     });
 
@@ -408,13 +439,90 @@ export class Cloud {
 
   /** Runs after a successful sign-in (e.g. finish the save that asked for it). */
   private afterAuth: (() => Promise<unknown>) | null = null;
+  private mode: AuthMode = 'login';
+  /** From a password reset link (#reset=…), until the new password is saved. */
+  private resetToken = '';
 
-  showAuth(reason = '', then?: () => Promise<unknown>) {
+  /** Switch the account dialog between signing in, a new account and the password pages. */
+  private authMode(mode: AuthMode) {
+    this.mode = mode;
+    const form = this.el<HTMLFormElement>('authForm');
+    const input = (name: string) => form.querySelector<HTMLInputElement>(`[name=${name}]`)!;
+    const show = (id: string, on: boolean, field?: string) => {
+      this.el(id).hidden = !on;
+      if (field) input(field).required = on;
+    };
+    const password = mode === 'reset' || mode === 'change' || mode === 'login' || mode === 'register';
+    this.el('authTabs').hidden = !(mode === 'login' || mode === 'register');
+    this.el('authModal').querySelectorAll<HTMLButtonElement>('[data-auth]').forEach((b) => b.classList.toggle('on', b.dataset.auth === mode));
+    show('authNameRow', mode === 'register');
+    show('authEmailRow', mode === 'login' || mode === 'register' || mode === 'forgot', 'email');
+    show('authCurrentRow', mode === 'change', 'current');
+    show('authPasswordRow', password, 'password');
+    show('authForgot', mode === 'login' && this.mailAvailable);
+    show('authBack', mode === 'forgot');
+    input('password').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+    const texts: Record<AuthMode, [title: string, submit: string, help: string]> = {
+      login: ['Sign in', 'Sign in', ''],
+      register: ['Create your free account', 'Create account', ''],
+      forgot: ['Forgot your password?', 'Send the link', 'Type the email of your account. We send you a link to choose a new password.'],
+      reset: ['Choose a new password', 'Save the new password', 'At least 8 characters. Your other devices are signed out.'],
+      change: ['Change your password', 'Change password', 'At least 8 characters. Your other devices are signed out.'],
+    };
+    const [title, submit, help] = texts[mode];
+    this.el('authTitle').textContent = t(title);
+    this.el('authSubmit').textContent = t(submit);
+    this.el('authHelp').textContent = t(help);
+    this.el('authHelp').hidden = !help;
+    this.el('authPasswordLabel').textContent = t(mode === 'login' || mode === 'register' ? 'Password' : 'New password');
+    this.el('authError').hidden = true;
+    this.el('authDone').hidden = true;
+  }
+
+  showAuth(reason = '', then?: () => Promise<unknown>, mode: AuthMode = 'login') {
     this.afterAuth = then ?? null;
+    this.authMode(mode);
     this.el('authReason').textContent = reason;
     this.el('authReason').hidden = !reason;
     this.el('authModal').hidden = false;
-    this.el<HTMLFormElement>('authForm').querySelector<HTMLInputElement>('[name=email]')!.focus();
+    const first = mode === 'change' ? 'current' : mode === 'reset' ? 'password' : 'email';
+    this.el<HTMLFormElement>('authForm').querySelector<HTMLInputElement>(`[name=${first}]`)!.focus();
+  }
+
+  /** Change the password of the signed-in account. */
+  changePassword() {
+    if (this.user) this.showAuth('', undefined, 'change');
+  }
+
+  /** Send a new link that confirms the account's email address. */
+  async resendVerification() {
+    try {
+      const { sent } = await api.resendVerification();
+      this.toast(sent ? 'We sent you a new link: open it to confirm your email address' : 'No new link was sent: your address is confirmed already, or several links went out in the last hour');
+    } catch (ex) {
+      this.toast((ex as Error).message);
+    }
+  }
+
+  /** A link from one of our emails: #reset=… opens "Choose a new password", #verify=… confirms the address. */
+  private async followEmailLink() {
+    const m = /^#(reset|verify)=([0-9a-f]{64})$/.exec(location.hash);
+    if (!m) return;
+    // the token must not stay in the address bar or the history
+    history.replaceState(null, '', location.pathname + location.search);
+    if (m[1] === 'reset') {
+      this.resetToken = m[2];
+      this.showAuth('', undefined, 'reset');
+      return;
+    }
+    try {
+      const { user } = await api.verifyEmail(m[2]);
+      if (user) this.user = user;
+      this.toast('Thank you: your email address is confirmed');
+      this.onChange();
+    } catch (ex) {
+      this.toast((ex as Error).message);
+    }
   }
 
   async signOut() {

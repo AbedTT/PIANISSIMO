@@ -156,6 +156,47 @@ const kb = (file) => `${Math.round(statSync(file).size / 1024).toLocaleString('e
 const appEntries = (prefix) => walk(dist).map(([rel, full]) => [`${prefix}app/${rel}`, readFileSync(full)]);
 const made = [];
 
+// ------------------------------------------------------------------ code signing (Windows)
+/**
+ * Sign a Windows program with Authenticode, when a code-signing certificate is set up:
+ *   PIANISSIMO_SIGN_PFX=path\to\certificate.pfx  PIANISSIMO_SIGN_PASSWORD=…   (a certificate file), or
+ *   PIANISSIMO_SIGN_THUMBPRINT=<sha1>   (one in the Windows certificate store, e.g. on a USB token)
+ * PIANISSIMO_SIGN_TIMESTAMP picks the timestamp server (default DigiCert's; empty = none, for tests).
+ * Signed programs show the publisher's name, and SmartScreen stops warning once the
+ * certificate has a reputation (at once with an EV certificate). Without one, nothing is signed.
+ */
+const signing = process.env.PIANISSIMO_SIGN_PFX || process.env.PIANISSIMO_SIGN_THUMBPRINT;
+const signtool = signing
+  ? [process.env.SIGNTOOL, ...(() => {
+      const kits = 'C:/Program Files (x86)/Windows Kits/10/bin';
+      if (!existsSync(kits)) return [];
+      return readdirSync(kits).filter((v) => /^10\./.test(v)).sort().reverse().map((v) => join(kits, v, 'x64', 'signtool.exe'));
+    })()].find((f) => f && existsSync(f))
+  : undefined;
+if (signing && !signtool) throw new Error('A signing certificate is set, but signtool.exe was not found (install the Windows SDK or set SIGNTOOL)');
+
+function sign(file) {
+  if (!signing) return false;
+  const timestamp = process.env.PIANISSIMO_SIGN_TIMESTAMP ?? 'http://timestamp.digicert.com';
+  const args = [
+    'sign', '/fd', 'SHA256', '/d', 'Pianissimo',
+    // the "more information" link Windows shows with the signature (optional)
+    ...(process.env.PIANISSIMO_SIGN_URL ? ['/du', process.env.PIANISSIMO_SIGN_URL] : []),
+    ...(process.env.PIANISSIMO_SIGN_PFX
+      ? ['/f', process.env.PIANISSIMO_SIGN_PFX, ...(process.env.PIANISSIMO_SIGN_PASSWORD ? ['/p', process.env.PIANISSIMO_SIGN_PASSWORD] : [])]
+      : ['/sha1', process.env.PIANISSIMO_SIGN_THUMBPRINT]),
+    ...(timestamp ? ['/tr', timestamp, '/td', 'SHA256'] : []),
+    file,
+  ];
+  const r = spawnSync(signtool, args, { encoding: 'utf8' });
+  if (r.status !== 0) {
+    // never print the arguments: they may hold the password
+    console.error(`${r.stdout}${r.stderr}`.trim());
+    throw new Error(`Signing ${relative(root, file)} failed`);
+  }
+  return true;
+}
+
 // ------------------------------------------------------------------ Windows
 const csc = ['Framework64', 'Framework']
   .map((f) => join(process.env.WINDIR ?? 'C:/Windows', 'Microsoft.NET', f, 'v4.0.30319', 'csc.exe'))
@@ -184,6 +225,7 @@ if (process.platform === 'win32' && csc) {
 
   const launcher = join(work, 'Pianissimo.exe');
   compile(launcher, [join(src, 'Common.cs'), join(src, 'Launcher.cs'), buildInfo]);
+  sign(launcher); // before it goes into the installer and the zip
   const readme = Buffer.from(
     [
       `Pianissimo ${version} for Windows`,
@@ -204,6 +246,7 @@ if (process.platform === 'win32' && csc) {
   compile(setup, [join(src, 'Common.cs'), join(src, 'Setup.cs'), buildInfo], [
     '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll', `/resource:${payload},payload.zip`,
   ]);
+  sign(setup);
   made.push(setup);
 
   const portable = join(release, `Pianissimo-${version}-windows-portable.zip`);
@@ -250,3 +293,11 @@ if (process.platform === 'win32' && csc) {
 
 console.log('\nDesktop packages:');
 for (const f of made) console.log(`  ${relative(root, f)}  (${kb(f)})`);
+if (process.platform === 'win32' && csc) {
+  console.log(
+    signing
+      ? '\nThe Windows programs are signed.'
+      : '\nThe Windows programs are not signed: Windows SmartScreen will say "unknown publisher".\n' +
+          'To sign them, set PIANISSIMO_SIGN_PFX and PIANISSIMO_SIGN_PASSWORD (see docs/INSTALL.md, "Signing").',
+  );
+}

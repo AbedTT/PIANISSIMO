@@ -4,6 +4,8 @@
  *
  *   GET    /health
  *   GET    /auth/me                 POST /auth/register  POST /auth/login  POST /auth/logout
+ *   POST   /auth/forgot {email}     POST /auth/reset {token, password}   POST /auth/verify {token}
+ *   POST   /account/password {current, password}   POST /account/verify (send a new confirmation link)
  *   GET    /account/export          POST /account/delete {password}
  *   GET    /scores                  POST /scores
  *   GET    /scores/{id}             PUT  /scores/{id}    DELETE /scores/{id}
@@ -26,6 +28,8 @@
  *   POST   /account/language {lang}
  *   GET    /omr                     POST /omr (multipart `file`: a photo or PDF of sheet music)
  *   GET    /admin/reports           POST /admin/reports/{comment|score}/{id} {action: restore|dismiss|remove}
+ *   POST   /errors {message, stack, page, version}  (a crash in a browser)
+ *   GET    /admin/errors            DELETE /admin/errors[/{id}]
  *
  * Every response is JSON and carries the CSRF token (`csrf`) that the next
  * state-changing request must send back in the X-CSRF-Token header.
@@ -37,12 +41,14 @@ namespace Pianissimo;
 require __DIR__ . '/../lib/Http.php';
 require __DIR__ . '/../lib/Db.php';
 require __DIR__ . '/../lib/Auth.php';
+require __DIR__ . '/../lib/Mail.php';
 require __DIR__ . '/../lib/Notify.php';
 require __DIR__ . '/../lib/Account.php';
 require __DIR__ . '/../lib/Omr.php';
 require __DIR__ . '/../lib/Scores.php';
 require __DIR__ . '/../lib/Classes.php';
 require __DIR__ . '/../lib/Community.php';
+require __DIR__ . '/../lib/Monitor.php';
 
 $config = require __DIR__ . '/../config.php';
 
@@ -50,13 +56,22 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
 header('Cache-Control: no-store');
+// API answers are data, never pages: nothing may run, load or frame them
+header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+header('X-Frame-Options: DENY');
+Http::configure($config);
+if (Http::isHttps()) {
+    header('Strict-Transport-Security: max-age=31536000');
+}
 
-set_exception_handler(function (\Throwable $e) use ($config): void {
+$monitor = null; // set once the database is open
+set_exception_handler(function (\Throwable $e) use ($config, &$monitor): void {
     if ($e instanceof HttpError) {
         $status = $e->status;
         $message = $e->getMessage();
     } else {
         error_log('[pianissimo] ' . $e);
+        $monitor?->reportServer($e);
         $status = 500;
         $message = $config['debug'] ? $e->getMessage() : 'Something went wrong on the server.';
     }
@@ -74,11 +89,18 @@ $notify = new Notify($db, $config);
 $scores = new Scores($db, $config, $notify);
 $classes = new Classes($db, $scores, $notify);
 $community = new Community($db, $scores, $notify);
+$monitor = new Monitor($db, $config);
 $auth->startSession();
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = '/' . trim($_SERVER['PATH_INFO'] ?? '', '/');
 $respond = fn (array $body, int $status = 200) => Http::json($body + ['csrf' => $auth->csrf()], $status);
+// with require_verified_email, posting publicly needs a confirmed address (when the server can send the link)
+$requireVerified = function (array $user) use ($config, $auth): void {
+    if (!empty($config['require_verified_email']) && empty($user['verified']) && $auth->canMail()) {
+        throw new HttpError(403, 'Please confirm your email address first: open the link we sent you, or send a new one from your account menu.');
+    }
+};
 
 if ($method !== 'GET') {
     $auth->checkCsrf();
@@ -90,7 +112,7 @@ if ($path === '/health') {
 }
 
 if ($path === '/auth/me' && $method === 'GET') {
-    $respond(['user' => $auth->user()]);
+    $respond(['user' => $auth->user(), 'mail' => $auth->canMail()]);
 }
 if ($path === '/auth/register' && $method === 'POST') {
     $in = Http::input(10_000);
@@ -100,6 +122,25 @@ if ($path === '/auth/register' && $method === 'POST') {
 if ($path === '/auth/login' && $method === 'POST') {
     $in = Http::input(10_000);
     $respond(['user' => $auth->login((string) ($in['email'] ?? ''), (string) ($in['password'] ?? ''))]);
+}
+if ($path === '/auth/forgot' && $method === 'POST') {
+    $auth->forgot((string) (Http::input(1_000)['email'] ?? ''));
+    $respond(['ok' => true]);
+}
+if ($path === '/auth/reset' && $method === 'POST') {
+    $in = Http::input(2_000);
+    $respond(['user' => $auth->reset((string) ($in['token'] ?? ''), (string) ($in['password'] ?? ''))]);
+}
+if ($path === '/auth/verify' && $method === 'POST') {
+    $auth->verifyEmail((string) (Http::input(1_000)['token'] ?? ''));
+    $respond(['ok' => true, 'user' => $auth->user()]);
+}
+if ($path === '/account/verify' && $method === 'POST') {
+    $respond(['sent' => $auth->sendVerification($auth->requireUser()['id'])]);
+}
+if ($path === '/account/password' && $method === 'POST') {
+    $in = Http::input(2_000);
+    $respond(['user' => $auth->changePassword($auth->requireUser()['id'], (string) ($in['current'] ?? ''), (string) ($in['password'] ?? ''))]);
 }
 if ($path === '/omr') {
     $omr = new Omr($db, $config);
@@ -149,7 +190,11 @@ if (preg_match('#^/scores/(\d+)(/duplicate)?$#', $path, $m)) {
     } elseif ($method === 'GET') {
         $respond(['score' => isset($_GET['meta']) ? $scores->info($id, $user['id']) : $scores->get($id, $user['id'])]);
     } elseif ($method === 'PUT') {
-        $respond(['score' => $scores->update($id, $user['id'], Http::input($config['max_score_bytes'] + 10_000))]);
+        $in = Http::input($config['max_score_bytes'] + 10_000);
+        if (($in['visibility'] ?? null) === 'public') {
+            $requireVerified($user);
+        }
+        $respond(['score' => $scores->update($id, $user['id'], $in)]);
     } elseif ($method === 'DELETE') {
         $scores->delete($id, $user['id']);
         $respond(['ok' => true]);
@@ -272,6 +317,7 @@ if (preg_match('#^/public/([A-Za-z0-9]{6,16})/(like|remix|report|comments)$#', $
             $respond($community->report('score', $scores->publicBySlug($slug)['id'], $user['id']));
         }
         if ($what === 'comments') {
+            $requireVerified($user);
             $respond(['comments' => $community->addComment($slug, $user['id'], (string) (Http::input(4_000)['text'] ?? ''))], 201);
         }
     }
@@ -312,6 +358,24 @@ if (preg_match('#^/admin/reports(?:/(comment|score)/(\d+))?$#', $path, $m)) {
     }
     if (!empty($m[1]) && $method === 'POST') {
         $community->moderate($m[1], (int) $m[2], (string) (Http::input(1_000)['action'] ?? ''));
+        $respond(['ok' => true]);
+    }
+}
+
+// ------------------------------------------------------------------ error reports
+if ($path === '/errors' && $method === 'POST') {
+    $monitor->reportClient(Http::input(10_000));
+    $respond(['ok' => true]);
+}
+if (preg_match('#^/admin/errors(?:/(\d+))?$#', $path, $m)) {
+    if (empty($auth->requireUser()['admin'])) {
+        throw new HttpError(403, 'Only site admins can see error reports.');
+    }
+    if ($method === 'GET' && empty($m[1])) {
+        $respond(['errors' => $monitor->list()]);
+    }
+    if ($method === 'DELETE') {
+        $monitor->clear(empty($m[1]) ? null : (int) $m[1]);
         $respond(['ok' => true]);
     }
 }
