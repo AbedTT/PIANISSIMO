@@ -60,6 +60,11 @@ export interface AppActions {
   showChecks(): void;
   openClasses(): void;
   scanMusic(): void;
+  /** An audio recording (WAV, MP3…) of a melody, or of chords, becomes notes. */
+  importAudio(): void;
+  /** The printed page a score came from, beside the score. */
+  togglePagePanel(): void;
+  pageBeside(): void;
   toggleTuner(): void;
   /** Wait mode is running. */
   readonly practising: boolean;
@@ -430,7 +435,29 @@ export const COMMANDS: Command[] = [
     label: 'Scan sheet music (photo or PDF)…',
     group: 'File',
     keys: ['Ctrl+Alt+KeyO'],
+    icon: '📷',
     run: (_ed, app) => app.scanMusic(),
+  },
+  {
+    id: 'importAudio',
+    label: 'Turn an audio recording into notes (WAV, MP3…)…',
+    group: 'File',
+    keys: ['Ctrl+Alt+KeyA'],
+    icon: '🎧',
+    run: (_ed, app) => app.importAudio(),
+  },
+  {
+    id: 'pagePanel',
+    label: 'Show or hide the printed page beside the score',
+    group: 'Interface',
+    keys: ['Ctrl+Alt+KeyP'],
+    run: (_ed, app) => app.togglePagePanel(),
+  },
+  {
+    id: 'pageBeside',
+    label: 'Put a picture of a page beside the score…',
+    group: 'File',
+    run: (_ed, app) => app.pageBeside(),
   },
   {
     id: 'classes',

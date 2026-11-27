@@ -28,6 +28,11 @@ export function detectPitch(buf: Float32Array, sampleRate: number, minFreq = 70,
     }
     nsdf[tau] = energy > 0 ? (2 * acf) / energy : 0;
   }
+  return pitchFromNsdf(nsdf, sampleRate, minLag, maxLag);
+}
+
+/** The period from a normalised square difference function (key maxima, McLeod & Wyvill). */
+export function pitchFromNsdf(nsdf: Float32Array, sampleRate: number, minLag: number, maxLag: number): Pitched | null {
   // the highest point of each positive lobe after the first zero crossing
   const peaks: number[] = [];
   let tau = 1;

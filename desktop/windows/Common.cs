@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -37,15 +38,25 @@ namespace Pianissimo
         public static string ReadServer()
         {
             string value = Environment.GetEnvironmentVariable("PIANISSIMO_SERVER");
-            if (string.IsNullOrEmpty(value) && File.Exists(SettingsFile))
+            if (string.IsNullOrEmpty(value)) value = ReadSetting("server");
+            return ValidServer(value) ? value.TrimEnd('/') : null;
+        }
+
+        /// <summary>A "name=value" line of settings.ini (the last one wins), or null.</summary>
+        public static string ReadSetting(string name)
+        {
+            string value = null;
+            try
             {
+                if (!File.Exists(SettingsFile)) return null;
                 foreach (string line in File.ReadAllLines(SettingsFile))
                 {
                     string t = line.Trim();
-                    if (t.StartsWith("server=", StringComparison.OrdinalIgnoreCase)) value = t.Substring(7).Trim();
+                    if (t.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase)) value = t.Substring(name.Length + 1).Trim();
                 }
             }
-            return ValidServer(value) ? value.TrimEnd('/') : null;
+            catch (Exception) { }
+            return value;
         }
 
         public static bool ValidServer(string value)
@@ -57,11 +68,23 @@ namespace Pianissimo
         public static void WriteServer(string value)
         {
             Directory.CreateDirectory(DataDir);
+            // other settings (such as audiveris=) stay as they are
+            StringBuilder others = new StringBuilder();
+            if (File.Exists(SettingsFile))
+            {
+                foreach (string line in File.ReadAllLines(SettingsFile))
+                {
+                    string t = line.Trim();
+                    if (t.Length == 0 || t.StartsWith(";") || t.StartsWith("server=", StringComparison.OrdinalIgnoreCase)) continue;
+                    others.Append(t).Append("\r\n");
+                }
+            }
             File.WriteAllText(SettingsFile,
                 "; Pianissimo desktop settings\r\n" +
                 "; server = the address of a Pianissimo website (with its PHP API) to sign in, share and sync with.\r\n" +
                 "; Leave it empty to keep everything on this computer.\r\n" +
-                "server=" + (ValidServer(value) ? value.Trim().TrimEnd('/') : "") + "\r\n");
+                "; audiveris = where Audiveris.exe is, if it is not in its usual folder (for scanning sheet music).\r\n" +
+                "server=" + (ValidServer(value) ? value.Trim().TrimEnd('/') : "") + "\r\n" + others);
         }
 
         /// <summary>True while a browser window is using Pianissimo's profile. Chromium keeps

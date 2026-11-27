@@ -284,7 +284,8 @@ export const api = {
   scanMusic: (file: File) => {
     const form = new FormData();
     form.append('file', file);
-    return call<{ result: { format: 'mxl' | 'musicxml'; data: string } }>('POST', '/omr', form);
+    // pages: the scanner's picture of each page (PNG, base64), to show beside the result
+    return call<{ result: { format: 'mxl' | 'musicxml'; data: string; pages?: string[] } }>('POST', '/omr', form);
   },
   /** A ticket for the live co-editing service; `url` is null when the server has none. */
   realtimeTicket: (id: number) => call<{ url: string | null; token?: string }>('POST', `/scores/${id}/realtime`, {}),

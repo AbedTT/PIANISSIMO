@@ -49,6 +49,14 @@ export class Cloud {
   /** We saved the score to the library (revision is the new one). */
   onSaved: (revision: number) => void = () => {};
   /**
+   * The editor is now linked to this score of the library on this computer: just saved there for
+   * the first time, or opened from it (also after a reload). Null: a score that is in neither.
+   */
+  onLocalLinked: (id: string | null, how?: 'saved' | 'opened') => void = () => {};
+  /** A score of the library on this computer was deleted, or duplicated (from → to). */
+  onLocalRemoved: (id: string) => void = () => {};
+  onLocalDuplicated: (from: string, to: string) => void = () => {};
+  /**
    * Set while a live co-editing session runs. Only its leader saves to the library; the others
    * are kept in step by the session (and told when the leader saved).
    */
@@ -90,8 +98,10 @@ export class Cloud {
     if (!this.localId) return;
     try {
       const item = await this.local.get(this.localId);
-      if (item) this.localJson = JSON.stringify(item.data);
-      else this.forgetLocal();
+      if (item) {
+        this.localJson = JSON.stringify(item.data);
+        this.onLocalLinked(this.localId, 'opened');
+      } else this.forgetLocal();
     } catch {
       /* storage unavailable: keep the id, saving will tell */
     }
@@ -180,23 +190,29 @@ export class Cloud {
   /** Forget the link to the library on this computer. */
   forgetLocal() {
     clearTimeout(this.localTimer);
+    const had = this.localId !== null;
     this.localId = null;
     this.localJson = '';
     localStorage.removeItem(LOCAL_ID_KEY);
     this.onChange();
+    if (had) this.onLocalLinked(null);
   }
 
   /** A different score is now in the editor (new, template, opened file…): it is in no library yet. */
   detach() {
+    const linked = this.localId !== null;
     this.forget();
     this.forgetLocal();
+    if (!linked) this.onLocalLinked(null);
   }
 
-  private linkLocal(id: string, json: string) {
+  private linkLocal(id: string, json: string, how: 'saved' | 'opened') {
+    const changed = this.localId !== id;
     this.localId = id;
     this.localJson = json;
     localStorage.setItem(LOCAL_ID_KEY, id);
     this.onChange();
+    if (changed || how === 'opened') this.onLocalLinked(id, how);
   }
 
   private link(meta: ScoreMeta, json: string) {
@@ -251,7 +267,7 @@ export class Cloud {
     try {
       const meta = await this.local.save(this.editor.score, this.localId);
       if (this.scoreId) this.forget(); // it was an online score: this computer's copy is the one now
-      this.linkLocal(meta.id, json);
+      this.linkLocal(meta.id, json, 'saved');
       if (first) void LocalLibrary.keep();
       if (!quiet) this.toast(first ? 'Saved to My scores on this computer' : 'Saved');
       return true;
@@ -766,7 +782,8 @@ export class Cloud {
       const title = scores.find((s) => s.id === id)!.title;
       row.querySelector('[data-act=open]')!.addEventListener('click', () => void this.openLocal(id));
       row.querySelector('[data-act=dup]')!.addEventListener('click', async () => {
-        await this.local.duplicate(id);
+        const copy = await this.local.duplicate(id);
+        if (copy) this.onLocalDuplicated(id, copy.id);
         void this.renderLocal();
       });
       row.querySelector('[data-act=up]')?.addEventListener('click', async () => {
@@ -783,6 +800,7 @@ export class Cloud {
       row.querySelector('[data-act=del]')!.addEventListener('click', async () => {
         if (!confirm(t('Delete this score from this computer? This cannot be undone.') + `\n\n${title}`)) return;
         await this.local.remove(id);
+        this.onLocalRemoved(id);
         if (id === this.localId) this.forgetLocal();
         void this.renderLocal();
       });
@@ -798,7 +816,7 @@ export class Cloud {
     }
     this.confirmLoad(item.data);
     this.forget();
-    this.linkLocal(id, JSON.stringify(this.editor.score));
+    this.linkLocal(id, JSON.stringify(this.editor.score), 'opened');
     this.el('libraryModal').hidden = true;
     this.toast(`Opened “${item.meta.title}”`);
   }

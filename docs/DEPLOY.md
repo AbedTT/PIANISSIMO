@@ -233,7 +233,9 @@ Install [Audiveris](https://github.com/Audiveris/audiveris) (open source, needs 
 'omr_timeout' => 180, // seconds
 ```
 
-`{in}` is replaced by the uploaded file, `{out}` by a fresh folder; any `.mxl`/`.musicxml` written into it is returned. Allow uploads of 10 MB in `php.ini` (`upload_max_filesize = 10M`, `post_max_size = 12M`). Without `omr_command`, the editor's *Scan sheet music* command says scanning is not set up.
+`{in}` is replaced by the uploaded file (named after the upload, so a page without a readable title gets the file's name), `{out}` by a fresh folder; any `.mxl`/`.musicxml` written into it is returned. With PHP's `zip` extension, Audiveris's black-and-white picture of each page (from its `.omr` file) goes back too, and the editor shows it beside the score. Allow uploads of 10 MB in `php.ini` (`upload_max_filesize = 10M`, `post_max_size = 12M`). Without `omr_command`, the editor's *Scan a page* dialog says this site has no scanner.
+
+The desktop app does not need this: it runs Audiveris on the user's own computer. Turning recordings into notes needs nothing on the server either (it runs in the browser; the chord model is served from `vendor/` with the app).
 
 ## 10. Production checklist
 

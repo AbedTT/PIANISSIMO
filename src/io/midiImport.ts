@@ -13,14 +13,16 @@ export interface RawNote {
   velocity: number;
 }
 
-interface Track {
+export interface Track {
   name: string;
   channel: number;
   program: number;
   notes: RawNote[];
+  /** A Pianissimo sound id (recordings name it directly); otherwise from the program. */
+  sound?: string;
 }
 
-interface MidiFile {
+export interface MidiFile {
   tracks: Track[];
   bpm: number;
   beats: number;
@@ -187,7 +189,14 @@ export function notesToStream(notes: RawNote[], key: number, origin = 0): Stream
 export function midiToScore(bytes: Uint8Array, title = 'Imported MIDI'): Score {
   const file = parseMidi(bytes);
   if (!file.tracks.length) throw new Error('This MIDI file has no notes.');
+  return tracksToScore(file, title);
+}
 
+/**
+ * Played notes (in ticks) as a score: one part per track, wide-range tracks on a grand staff.
+ * Used for MIDI files and for recordings turned into notes. A track may name its sound directly.
+ */
+export function tracksToScore(file: MidiFile, title: string): Score {
   interface Plan {
     part: Part;
     staves: { clef: Clef; notes: RawNote[] }[];
@@ -199,7 +208,7 @@ export function midiToScore(bytes: Uint8Array, title = 'Imported MIDI'): Score {
       const notes = t.notes.map((n) => ({ ...n, midi: midiOf(drumPitch(drumForMidi(n.midi))) }));
       return { part: { name: t.name || 'Drums', short: 'Dr.', staves: 1 }, staves: [{ clef: 'percussion' as Clef, notes }], sound: 'drums' };
     }
-    const sound = soundForProgram(t.program);
+    const sound = t.sound ?? soundForProgram(t.program);
     const lo = Math.min(...t.notes.map((n) => n.midi));
     const hi = Math.max(...t.notes.map((n) => n.midi));
     const name = t.name || soundById(sound).name;

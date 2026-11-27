@@ -31,7 +31,11 @@ final class Omr
         return trim((string) ($this->config['omr_command'] ?? '')) !== '';
     }
 
-    /** Recognise an uploaded file; returns ['format' => 'mxl'|'musicxml', 'data' => base64]. */
+    /**
+     * Recognise an uploaded file; returns ['format' => 'mxl'|'musicxml', 'data' => base64, 'pages' => [base64 PNG, …]].
+     * The pages are Audiveris's black-and-white picture of each page (from its .omr project file), so the
+     * editor can show the page beside the result; other engines return none.
+     */
     public function scan(int $userId, ?array $file): array
     {
         if (!$this->available()) {
@@ -52,7 +56,8 @@ final class Omr
 
         $dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pianissimo-omr-' . bin2hex(random_bytes(8));
         mkdir($dir . DIRECTORY_SEPARATOR . 'out', 0700, true);
-        $in = $dir . DIRECTORY_SEPARATOR . "page.$ext";
+        // the file is named after the upload, so the score gets that title when the page has none
+        $in = $dir . DIRECTORY_SEPARATOR . self::baseName((string) ($file['name'] ?? '')) . ".$ext";
         try {
             if (!copy($file['tmp_name'], $in)) {
                 throw new HttpError(500, 'The upload could not be read.');
@@ -63,7 +68,7 @@ final class Omr
                 throw new HttpError(422, 'No music could be recognised on that page. Try a straighter, sharper photo.');
             }
             $format = str_ends_with(strtolower($result), '.mxl') ? 'mxl' : 'musicxml';
-            return ['format' => $format, 'data' => base64_encode((string) file_get_contents($result))];
+            return ['format' => $format, 'data' => base64_encode((string) file_get_contents($result)), 'pages' => $this->pages($dir . DIRECTORY_SEPARATOR . 'out')];
         } finally {
             self::remove($dir);
         }
@@ -108,6 +113,44 @@ final class Omr
             }
         }
         return null;
+    }
+
+    /** Audiveris's picture of each page: sheet#1/BINARY.png, … inside its .omr file (a zip). */
+    private function pages(string $dir): array
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            return [];
+        }
+        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $f) {
+            if (!str_ends_with(strtolower($f->getFilename()), '.omr')) {
+                continue;
+            }
+            $zip = new \ZipArchive();
+            if ($zip->open($f->getPathname(), \ZipArchive::RDONLY) !== true) {
+                return [];
+            }
+            $pages = [];
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i);
+                if ($stat && preg_match('~^sheet#(\d+)/BINARY\.png$~', $stat['name'], $m) && $stat['size'] <= 20 * 1024 * 1024) {
+                    $pages[(int) $m[1]] = base64_encode((string) $zip->getFromIndex($i));
+                }
+            }
+            $zip->close();
+            ksort($pages);
+            return array_values($pages);
+        }
+        return [];
+    }
+
+    /** A safe file name from the upload's ("Moonlight sonata.pdf" -> "Moonlight sonata"). */
+    public static function baseName(string $name): string
+    {
+        $stem = pathinfo(basename(str_replace('\\', '/', $name)), PATHINFO_FILENAME);
+        $stem = trim((string) preg_replace('/[^\p{L}\p{N} _().,\'-]+/u', ' ', $stem));
+        $stem = trim(mb_substr($stem, 0, 60));
+        return $stem === '' || str_starts_with($stem, '.') ? 'Scanned page' : $stem;
     }
 
     private function throttle(int $userId): void

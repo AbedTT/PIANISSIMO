@@ -139,7 +139,8 @@ Entry overwrites, like Flat and MuseScore. Every bar (and every voice) always ad
 - **Classes** (`Ctrl`+`Alt`+`J`): teachers create a class, share its code and set assignments, with optional marking criteria. Students start, hand in and get feedback, a grade and marks. The teacher can open and comment on every student's copy. A due-date agenda exports to your calendar (`.ics`).
 - **Notifications** (🔔): invitations, new assignments, hand-ins, feedback and comments; optional email copies. Admins review reported content on `admin.html`.
 - **Up to four voices per staff**: `V` moves through voices 1–4.
-- **Scan sheet music** (`Ctrl`+`Alt`+`O`): a photo or PDF becomes an editable score, when the server has Audiveris set up ([docs/DEPLOY.md](docs/DEPLOY.md)).
+- **Import ▾ → Scan a page** (`Ctrl`+`Alt`+`O`): a PDF or photo of printed music becomes an editable score. The desktop app reads it on your computer with [Audiveris](https://audiveris.github.io) (free; the dialog explains the one-time install); a website needs Audiveris on its server ([docs/DEPLOY.md](docs/DEPLOY.md)). The page is shown **beside the score** to check it bar by bar (`Ctrl`+`Alt`+`P`), and is kept with the score in My scores.
+- **Import ▾ → Turn a recording into notes** (`Ctrl`+`Alt`+`A`): a WAV, MP3, M4A, OGG or FLAC file of a melody, or of chords (with Spotify's Basic Pitch), becomes a score with its tempo, time signature and key. Everything runs in the browser; the recording is not uploaded.
 - **Your data**: the account menu downloads everything about your account, or deletes it.
 - **Community**: shared score pages have likes, comments, *Remix* (your own copy, crediting the original) and a link to the author's profile. Explore can sort by most liked.
 - **Embed**: unlisted and public scores get `<iframe>` code in the share dialog for a compact player on any website.

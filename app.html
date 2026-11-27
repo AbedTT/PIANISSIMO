@@ -18,6 +18,15 @@
         <button data-cmd="open" title="Open (Ctrl+O)">Open</button>
         <button data-cmd="save" title="Save (Ctrl+S)">Save</button>
         <div class="menu">
+          <button class="menu-trigger">Import ▾</button>
+          <div class="menu-list">
+            <button data-cmd="scanMusic">📷 Scan a page (PDF or picture)…</button>
+            <button data-cmd="importAudio">🎧 Turn a recording into notes…</button>
+            <button data-cmd="open">MusicXML, MIDI or Pianissimo file…</button>
+            <button data-cmd="pageBeside">🖼 Put a picture of a page beside the score…</button>
+          </div>
+        </div>
+        <div class="menu">
           <button class="menu-trigger">Export ▾</button>
           <div class="menu-list">
             <button data-cmd="download">Pianissimo file (.json backup)</button>
@@ -45,6 +54,7 @@
           <button class="bell-btn" id="bellBtn" aria-label="Notifications" aria-controls="bellPanel">🔔<span id="bellCount" class="bell-count" hidden></span></button>
           <div class="bell-panel" id="bellPanel" role="dialog" aria-label="Notifications" hidden></div>
         </div>
+        <button id="pageBtn" data-cmd="pagePanel" title="Show or hide the printed page beside the score (Ctrl+Alt+P)" aria-pressed="false" hidden>📄 Page</button>
         <button data-cmd="share" title="Share a link to this score (Alt+S)">⇪ Share</button>
         <button data-cmd="library" title="Your saved scores (Ctrl+Shift+O)">▤ My scores</button>
         <button data-cmd="search" title="Search commands (Ctrl+Shift+P or F1)">⌘</button>
@@ -191,6 +201,10 @@
     <div class="modal" id="newModal" hidden>
       <div class="modal-card">
         <header><h2>New score</h2><button class="close" data-close>✕</button></header>
+        <div class="new-import">
+          <button type="button" data-cmd="scanMusic">📷 <b>Scan a page</b><span>PDF or photo of printed music</span></button>
+          <button type="button" data-cmd="importAudio">🎧 <b>From a recording</b><span>WAV or MP3 of a melody or chords</span></button>
+        </div>
         <h4 class="new-sub">Start from a template</h4>
         <div class="templates" id="templateList"></div>
         <h4 class="new-sub">Or set it up yourself</h4>

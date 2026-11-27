@@ -150,9 +150,9 @@ export const LEGAL_BLOCKS: Record<string, [string, string, string]> = {
   ],
   'pv.h.scan': ['Numériser des partitions', 'Escanear partituras', 'Noten scannen'],
   'pv.scan': [
-    'Si vous numérisez une page de musique, l’image ou le PDF est envoyé au serveur du site, transformé en notes, puis supprimé aussitôt. Seule la partition obtenue s’ouvre dans votre éditeur.',
-    'Si escaneas una página de música, la imagen o el PDF se envía al servidor del sitio, se convierte allí en notas y se borra enseguida. Solo la partitura resultante se abre en tu editor.',
-    'Wenn Sie eine Notenseite scannen, wird das Bild oder PDF an den Server der Website geschickt, dort in Noten umgewandelt und sofort gelöscht. Nur die erkannte Partitur öffnet sich in Ihrem Editor.',
+    'Si vous numérisez une page de musique sur un site web, l’image ou le PDF est envoyé au serveur du site, transformé en notes, puis supprimé aussitôt ; seuls la partition et une image en noir et blanc de la page reviennent dans votre éditeur. Dans l’application de bureau, la page est lue sur votre propre ordinateur par Audiveris et rien n’est envoyé. Une page gardée avec une partition reste dans le stockage de ce navigateur, sur votre ordinateur. Les enregistrements transformés en notes sont analysés dans votre navigateur et jamais envoyés.',
+    'Si escaneas una página de música en un sitio web, la imagen o el PDF se envía al servidor del sitio, se convierte allí en notas y se borra enseguida; solo vuelven a tu editor la partitura y una imagen en blanco y negro de la página. En la aplicación de escritorio, Audiveris lee la página en tu propio equipo y no se envía nada. Una página que guardas con una partitura se queda en el almacenamiento de este navegador, en tu equipo. Las grabaciones que conviertes en notas se analizan en tu navegador y nunca se suben.',
+    'Wenn Sie auf einer Website eine Notenseite scannen, wird das Bild oder PDF an den Server der Website geschickt, dort in Noten umgewandelt und sofort gelöscht; nur die Partitur und ein Schwarz-Weiß-Bild der Seite kommen in Ihren Editor zurück. In der Desktop-App liest Audiveris die Seite auf Ihrem eigenen Computer, und nichts wird gesendet. Eine Seite, die Sie bei einer Partitur behalten, bleibt im Speicher dieses Browsers auf Ihrem Computer. Aufnahmen, die Sie in Noten verwandeln, werden in Ihrem Browser ausgewertet und nie hochgeladen.',
   ],
   'pv.h.cookies': ['Cookies', 'Cookies', 'Cookies'],
   'pv.cookies': [

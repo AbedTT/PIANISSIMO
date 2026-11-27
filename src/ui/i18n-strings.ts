@@ -149,6 +149,9 @@ export const COMMAND_ROWS: Row[] = [
   // files
   ['New score', 'Nouvelle partition', 'Nueva partitura', 'Neue Partitur'],
   ['Open… (Pianissimo / MusicXML)', 'Ouvrir… (Pianissimo / MusicXML)', 'Abrir… (Pianissimo / MusicXML)', 'Öffnen… (Pianissimo / MusicXML)'],
+  ['Turn an audio recording into notes (WAV, MP3…)…', 'Transformer un enregistrement audio en notes (WAV, MP3…)…', 'Convertir una grabación de audio en notas (WAV, MP3…)…', 'Eine Audioaufnahme in Noten verwandeln (WAV, MP3…)…'],
+  ['Show or hide the printed page beside the score', 'Afficher ou masquer la page imprimée à côté de la partition', 'Mostrar u ocultar la página impresa junto a la partitura', 'Die gedruckte Seite neben der Partitur ein- oder ausblenden'],
+  ['Put a picture of a page beside the score…', 'Placer l’image d’une page à côté de la partition…', 'Poner la imagen de una página junto a la partitura…', 'Bild einer Seite neben die Partitur legen…'],
   ['Check for updates', 'Rechercher des mises à jour', 'Buscar actualizaciones', 'Nach Updates suchen'],
   ['Save to my library', 'Enregistrer dans ma bibliothèque', 'Guardar en mi biblioteca', 'In meiner Bibliothek speichern'],
   ['Download a backup file (.json)', 'Télécharger une sauvegarde (.json)', 'Descargar una copia (.json)', 'Sicherungsdatei herunterladen (.json)'],
@@ -378,7 +381,7 @@ export const SITE_BLOCKS: Record<string, [string, string, string]> = {
   'guide.mic': ['Micro et accordeur', 'Micrófono y afinador', 'Mikrofon und Stimmgerät'],
   'guide.together': ['Écrire à plusieurs', 'Escribir juntos', 'Gemeinsam schreiben'],
   'guide.classes': ['Classes et devoirs', 'Clases y tareas', 'Klassen und Aufgaben'],
-  'guide.scan': ['Numériser des partitions', 'Escanear partituras', 'Noten scannen'],
+  'guide.scan': ['Numériser des pages et des enregistrements', 'Escanear páginas y grabaciones', 'Seiten und Aufnahmen einlesen'],
   'guide.offline': ['Hors ligne et sur téléphone', 'Sin conexión y en el móvil', 'Offline und auf dem Handy'],
   'guide.shortcuts': ['Tous les raccourcis', 'Todos los atajos', 'Alle Tastenkürzel'],
   'guide.shortcutsLead': [

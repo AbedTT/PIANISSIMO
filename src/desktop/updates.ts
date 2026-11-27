@@ -15,6 +15,8 @@ export interface DesktopInfo {
   version: string;
   /** The installed Windows app downloads and runs the new setup itself (the portable copy cannot). */
   canInstall: boolean;
+  /** Audiveris is installed on this computer, so "Scan a page" works without a server. */
+  scan?: boolean;
 }
 
 export interface Release {
@@ -40,7 +42,8 @@ export function newer(candidate: string, current: string): boolean {
   return false;
 }
 
-/** The launcher's description of this copy, or null when this is the website. */
+/** The launcher's description of this copy, or null when this is the website. Asked afresh each time
+ * (whether Audiveris is installed can change while the app runs). */
 export async function desktopInfo(): Promise<DesktopInfo | null> {
   try {
     const res = await fetch('/__desktop.json', { cache: 'no-store' });

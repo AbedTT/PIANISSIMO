@@ -16,7 +16,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const files = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' })
   .stdout.split('\n')
   .map((f) => f.trim())
-  .filter((f) => f && !f.startsWith('node_modules/') && !f.startsWith('dist/') && !f.startsWith('release/'));
+  .filter((f) => f && !f.startsWith('node_modules/') && !f.startsWith('dist/') && !f.startsWith('release/') && !f.startsWith('public/vendor/')); // third-party files, kept exactly as published
 
 const TEXT = new Set(['.ts', '.mjs', '.js', '.php', '.css', '.html', '.md', '.yml', '.json', '.sh', '.py', '.cs', '.webmanifest', '.htaccess']);
 const CODE = new Set(['.ts', '.mjs', '.js', '.php', '.css', '.html', '.cs', '.py', '.sh']);

@@ -6,7 +6,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 
 ---
 
-## 1. Where we are (phases 1–34, shipped)
+## 1. Where we are (phases 1–38, shipped)
 
 | Area | Shipped |
 |---|---|
@@ -40,7 +40,8 @@ Everything from the original gap list that shipped in phases 7–18 has been rem
 | Area | Item | Priority | Planned in |
 |---|---|---|---|
 | Legal | The rewritten Privacy and Terms, and their French, Spanish and German translations, are drafts: a person (the site operator, ideally with legal advice) must review them and add contact details and governing law | P1 before going live | Needs a person |
-| Input | Scanning quality depends on the engine. Audiveris reads clean printed scores well, and handwriting and phone photos taken at an angle poorly. There is no in-app correction step beyond normal editing | P3 | Idea |
+| Input | Scanning quality depends on Audiveris: clean printed scores read well, handwriting and photos taken at an angle poorly. It can miss a short last line (one bar alone on a line, as in Pianissimo's own printouts), and it reads no titles or lyrics unless its OCR language data is installed | P3 | Upstream |
+| Input | Recordings: a melody needs a steady tempo (there is no tempo map for a rubato performance), and chords from Basic Pitch are a draft (it hears notes, not voices or hands). Several pages of one scan are shown one at a time | P3 | Idea |
 | Notation | More than four voices per staff: a deliberate limit, the same as MuseScore and Sibelius and the usual MusicXML practice | — | Not planned |
 
 ## 3. Architecture decisions for the next phases
@@ -365,7 +366,29 @@ Beyond the original plan, built after it was complete.
 - [x] **Updates for the desktop app**: the launcher tells the app its version (`/__desktop.json`); once a day the app looks at the latest GitHub release (or a self-hosted `latest.json`) and shows a bar with what is new, **Update now** / **Download** and **Later**; also *Check for updates* in the command search.
 - [x] **One-click install on Windows**: the launcher downloads the setup only from that repository's releases, checks the file, its SHA-256 and (for signed builds) the publisher's signature, and runs it with `/update`. The setup waits for the window to close (it closes itself after saving), installs over the old version keeping scores, settings and shortcuts, and opens Pianissimo again. Requests from other websites are refused. Tested with a local feed (download, checksum rejection) and against the real GitHub repository; the final install step was not run, so as not to replace the installed copy on the development machine.
 
-**Phases 1–34 are complete.** Section 2 lists what is still open.
+### Phase 35: Scanning in the desktop app, without a server ✅
+- [x] **Audiveris on this computer**: the Windows and macOS/Linux launchers find Audiveris (its usual folders, `audiveris=` in settings.ini, or `PIANISSIMO_AUDIVERIS`) and say so in `/__desktop.json`. `POST /__desktop/scan` (our own page only: custom header and Origin) checks the file by its content (PDF, PNG, JPEG, TIFF; 30 MB), runs Audiveris in a private temporary folder with a time limit, one scan at a time, deletes the folder, and returns the MusicXML and Audiveris's picture of each page. No account or server needed.
+- [x] **Easy to find**: an **Import ▾** menu (Scan a page, Turn a recording into notes, MusicXML/MIDI file, a picture beside the score), buttons in **New score**, and a PDF or picture dropped on the editor or opened with **Open** goes to the scanner. A dialog to choose or drop the file, with tips and a timer while it reads. Without Audiveris it shows how to install it (the right file for Windows, Mac or Linux) and **Check again**; a website without a scanner says so.
+- [x] The score is named after the file when the page has no readable title. The server's scanner (Phase 29) also returns the page pictures (PHP `zip`) and uses the file name.
+- [x] **Tested with the real Audiveris 5.11** (extracted from its installer, not installed): the waltz template printed to PDF is read in about 30–60 s with all its notes right (`src/io/scan.test.ts` keeps that output as a fixture); a browser test drives the real dialog through the portable launcher to Audiveris and back (`E2E_DESKTOP_URL`, `E2E_SCAN_PDF`). Found on the way: Audiveris missed the page's last line, a single short bar (see section 2).
+
+### Phase 36: Recordings to notes, a melody ✅
+- [x] **Import ▾ → Turn a recording into notes** (`Ctrl`+`Alt`+`A`): WAV, MP3, M4A, OGG or FLAC, decoded and mixed to mono by the browser (up to 15 minutes); nothing is uploaded.
+- [x] **One melody**: the McLeod pitch method of the microphone, run over the whole recording (11.6 ms steps, 55 Hz–2 kHz), smoothed, and cut into notes where the pitch changes and holds, the sound stops, or a note is struck again (repeated notes stay separate).
+- [x] **Tempo, beat, key**: the tempo where note starts line up on beats, eighths and sixteenths (choosing between half, double, ⅔ and 3⁄2 by the usual time from note to note); the key from the notes used (Aarden's profiles, good for melodies). A review step shows them with the title, instrument, time signature and **first note on beat…** (pickups), all changeable; the exact tempo found is kept unless changed.
+- [x] Written through the MIDI importer's quantiser (16ths or triplets per beat); detached notes last until the next one, long notes end on whole or half beats.
+
+### Phase 37: The printed page beside the score ✅
+- [x] After a scan, the page is shown in its own column next to the score (a sheet at the bottom on phones): pages ‹ ›, zoom − + (or Ctrl + wheel), drag the edge to resize (remembered). **📄 Page** in the top bar and `Ctrl`+`Alt`+`P` show and hide it.
+- [x] Kept with the score in My scores on this computer (IndexedDB `pianissimo-pages`): on its first save, when it is opened again or after a reload, duplicated and deleted with it. Any other score shows no page.
+- [x] **Put a picture of a page beside the score…** shows any picture there, for copying music by hand.
+
+### Phase 38: Chords from recordings (Basic Pitch) ✅
+- [x] **Chords or several notes at once**: Spotify's Basic Pitch model (Apache-2.0) on TensorFlow.js 3.21, copied into `public/vendor/` after checking both against the npm registry's checksums (no new npm dependency), loaded only when used. Its window cutting and note decoding are ported to `src/audio/basicPitch.ts`, freeing every tensor and with a faster "melodia trick" (same result).
+- [x] The ES2017 bundle of TensorFlow.js, because the usual one's polyfills evaluate strings, which the Content-Security-Policy forbids (found by the browser test; the policy stays as strict as it was).
+- [x] Wide-range results go on a grand staff, split at middle C. A browser test plays C, F, G and C major chords to the real model and finds their notes.
+
+**Phases 1–38 are complete.** Section 2 lists what is still open.
 
 ## 5. How a phase is built
 

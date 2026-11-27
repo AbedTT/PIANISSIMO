@@ -85,7 +85,7 @@ function cleanup() {
 function fakeMicWav(path) {
   const rate = 44100;
   const n = Math.round(rate * 1.5);
-  const data = Buffer.alloc(n * 2);
+  const samples = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const t = i / rate;
     let v = 0;
@@ -94,8 +94,16 @@ function fakeMicWav(path) {
       [1, 0.5, 0.25].forEach((a, k) => (v += a * Math.sin(2 * Math.PI * 523.25 * (k + 1) * t)));
       v *= 0.25 * env;
     }
-    data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, v)) * 32767), i * 2);
+    samples[i] = v;
   }
+  return writeWav(path, samples, rate);
+}
+
+/** A mono 16-bit WAV file. */
+function writeWav(path, samples, rate) {
+  const n = samples.length;
+  const data = Buffer.alloc(n * 2);
+  for (let i = 0; i < n; i++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, samples[i])) * 32767), i * 2);
   const head = Buffer.alloc(44);
   head.write('RIFF', 0);
   head.writeUInt32LE(36 + data.length, 4);
@@ -111,6 +119,47 @@ function fakeMicWav(path) {
   head.writeUInt32LE(data.length, 40);
   writeFileSync(path, Buffer.concat([head, data]));
   return path;
+}
+
+/**
+ * A recording: notes as [midi numbers (a chord), beats] at `bpm`, each a tone with overtones that
+ * fades like a plucked or struck string (or holds, like a voice).
+ */
+function recording(path, notes, bpm, { lead = 0.4, decay = 0.6 } = {}) {
+  const rate = 44100;
+  const beat = 60 / bpm;
+  const total = lead + notes.reduce((a, [, b]) => a + b, 0) * beat + 0.6;
+  const out = new Float32Array(Math.ceil(total * rate));
+  let t = lead;
+  for (const [midis, beats] of notes) {
+    const len = beats * beat * 0.95;
+    for (const midi of midis) {
+      const f0 = 440 * 2 ** ((midi - 69) / 12);
+      const start = Math.floor(t * rate);
+      for (let i = 0; i < len * rate; i++) {
+        const time = i / rate;
+        const env = Math.min(1, time / 0.008) * Math.min(1, (len - time) / 0.04) * Math.exp(-time * decay);
+        let v = 0;
+        [1, 0.45, 0.25, 0.12].forEach((a, k) => (v += a * Math.sin(2 * Math.PI * f0 * (k + 1) * time)));
+        out[start + i] += (0.22 / Math.sqrt(midis.length)) * env * v;
+      }
+    }
+    t += beats * beat;
+  }
+  return writeWav(path, out, rate);
+}
+
+/** Open the Import menu's entry and give the file chooser of the dialog that opens this file. */
+async function importFile(page, cmd, file) {
+  await page.send('Page.setInterceptFileChooserDialog', { enabled: true });
+  const chooser = page.browser.once('Page.fileChooserOpened', page.sessionId);
+  await page.eval(`document.querySelector('.file-actions [data-cmd=${cmd}]').click()`);
+  const modal = cmd === 'scanMusic' ? 'scanModal' : 'audioModal';
+  await page.waitFor(`!document.getElementById('${modal}').hidden && !document.querySelector('#${modal} [data-step=pick]').hidden`, `the ${modal} dialog`);
+  await page.gesture(`document.querySelector('#${modal} .drop-zone').click()`);
+  const { backendNodeId } = await chooser;
+  await page.send('DOM.setFileInputFiles', { files: [file], backendNodeId });
+  await page.send('Page.setInterceptFileChooserDialog', { enabled: false });
 }
 
 // ------------------------------------------------------------------ a tiny CDP client
@@ -257,6 +306,19 @@ class Page {
     const r = await this.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
     return r.result.value;
+  }
+
+  /** With E2E_SHOTS=<folder>, a screenshot of the page there (for looking at a layout). */
+  async shot(name) {
+    if (!process.env.E2E_SHOTS) return;
+    const { data } = await this.send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(join(process.env.E2E_SHOTS, `${name}.png`), Buffer.from(data, 'base64'));
+  }
+
+  /** Run code as if the user did it (file choosers only open from a user gesture). */
+  async gesture(expression) {
+    const r = await this.send('Runtime.evaluate', { expression, userGesture: true, awaitPromise: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
   }
 
   async waitFor(expression, what = expression, ms = 15000) {
@@ -616,7 +678,10 @@ test(
       await apiIn(alice, 'POST', '/auth/register', { name: `Alice ${stamp}`, email: `alice-c-${stamp}@example.com`, password: 'correct horse battery' });
       const data = await alice.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave'))`);
       data.title = `Waltz ${stamp}`;
-      const created = (await apiIn(alice, 'POST', '/scores', { data })).data.score;
+      const saved = await apiIn(alice, 'POST', '/scores', { data });
+      // this step has failed now and then in full runs: say what the server answered
+      assert(saved.data?.score, `saving the score answered ${saved.status}: ${JSON.stringify(saved.data).slice(0, 300)}`);
+      const created = saved.data.score;
       await apiIn(alice, 'PUT', `/scores/${created.id}`, { visibility: 'public' });
 
       // a visitor sees the page, no comment box but a sign-in hint
@@ -722,18 +787,166 @@ test(
     // a 1×1 PNG as the "photo"
     const png = join(tmp, 'page.png');
     writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64'));
-    await page.send('Page.setInterceptFileChooserDialog', { enabled: true });
-    const chooser = page.browser.once('Page.fileChooserOpened', page.sessionId);
-    await page.eval(`document.getElementById('score').focus()`);
-    await page.press('Ctrl+Alt+O');
-    const { backendNodeId } = await chooser;
-    await page.send('DOM.setFileInputFiles', { files: [png], backendNodeId });
+    await importFile(page, 'scanMusic', png);
     await page.waitFor(`document.getElementById('title').value === 'Scanned page'`, 'the recognised score is open', 20000);
     const steps = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures[0].staves[0].map((e) => e.pitches[0]?.step).join('')`);
     assert(steps === 'CDEF', `recognised notes: ${steps}`);
+    // the server's engine sent no picture: the photo itself is shown beside the score
+    await page.waitFor(`!document.getElementById('pagePanel').hidden && document.querySelector('#pagePanel img').naturalWidth > 0`, 'the photo beside the score');
+    assert(await page.eval(`document.getElementById('scanModal').hidden`), 'the dialog closed');
   },
   { needsApi: true },
 );
+
+test('scanning in the desktop app: how to set up Audiveris, then a scan with its page kept in My scores', async (page) => {
+  // the desktop app's launcher, first without Audiveris, then with it (its answer is a real Audiveris 5.11 result)
+  const mxl = readFileSync(join(root, 'src/io/fixtures/audiveris-waltz.mxl')).toString('base64');
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+  await page.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `(() => {
+      const real = window.fetch;
+      const json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
+      window.__audiveris = false;
+      window.__scans = [];
+      window.fetch = (input, init) => {
+        const url = typeof input === 'string' ? input : input.url;
+        if (url.endsWith('/__desktop.json')) return Promise.resolve(json({ platform: 'windows', version: '0.5.0', canInstall: true, scan: window.__audiveris }));
+        // this desktop app has no online server that scans
+        if (url.endsWith('/omr') && (!init || !init.method || init.method === 'GET')) return Promise.resolve(json({ available: false }));
+        if (url.endsWith('/__desktop/scan')) {
+          window.__scans.push({ headers: init.headers, size: init.body.size });
+          return Promise.resolve(json({ result: { format: 'mxl', data: '${mxl}', pages: ['${png}'] } }));
+        }
+        return real(input, init);
+      };
+    })()`,
+  });
+  // signed out (earlier tests signed in: then Ctrl+S would save to the online library)
+  await page.send('Network.clearBrowserCookies');
+  await page.goto('/app.html?template=blank-piano');
+  await page.waitFor(`document.querySelector('#score svg')`);
+  // no Audiveris (and no account): the dialog explains how to install it
+  await page.eval(`document.querySelector('.file-actions [data-cmd=scanMusic]').click()`);
+  await page.waitFor(`!document.querySelector('#scanModal [data-step=setup]').hidden`, 'the set-up steps');
+  assert(await page.eval(`document.querySelector('#scanModal [data-file]').textContent.includes('windows-x86_64.msi')`), 'names the Windows installer');
+  assert(await page.eval(`document.querySelector('#scanModal a[href^="https://github.com/Audiveris/audiveris/releases"]') !== null`), 'links to the download');
+  await page.shot('scan-setup');
+  // installed: "Check again" leads to choosing the page
+  await page.eval(`window.__audiveris = true; document.querySelector('#scanModal [data-setup=desktop] [data-act=recheck]').click()`);
+  await page.waitFor(`!document.querySelector('#scanModal [data-step=pick]').hidden`, 'the file step');
+  const pdf = join(tmp, 'Little waltz.pdf');
+  writeFileSync(pdf, Buffer.from('%PDF-1.4\n% a stand-in page\n'));
+  await page.send('Page.setInterceptFileChooserDialog', { enabled: true });
+  const chooser = page.browser.once('Page.fileChooserOpened', page.sessionId);
+  await page.gesture(`document.querySelector('#scanModal .drop-zone').click()`);
+  const { backendNodeId } = await chooser;
+  await page.send('DOM.setFileInputFiles', { files: [pdf], backendNodeId });
+  await page.waitFor(`document.getElementById('title').value === 'Little waltz'`, 'the score is named after the file');
+  const scan = await page.eval(`window.__scans[0]`);
+  assert(scan.headers['X-Pianissimo-Desktop'] === '1' && scan.headers['X-File-Name'] === 'Little%20waltz.pdf' && scan.size > 10, `sent to the launcher: ${JSON.stringify(scan)}`);
+  const bars = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures.length`);
+  assert(bars === 7, `bars: ${bars}`);
+  await page.waitFor(`!document.getElementById('pagePanel').hidden && document.querySelector('#pagePanel img').naturalWidth > 0`, 'the page beside the score');
+  assert(await page.eval(`!document.getElementById('pageBtn').hidden && document.getElementById('pageBtn').getAttribute('aria-pressed') === 'true'`), 'the Page button is on');
+  await page.shot('scan-page-beside');
+  // the page takes a column of the workspace, next to the score
+  const cols = await page.eval(`getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns.split(' ').length`);
+  assert(cols === 3, `workspace columns: ${cols}`);
+  // Ctrl+Alt+P hides and shows it
+  await page.eval(`document.getElementById('score').focus()`);
+  await page.press('Ctrl+Alt+P');
+  await page.waitFor(`document.getElementById('pagePanel').hidden`, 'hidden');
+  await page.press('Ctrl+Alt+P');
+  await page.waitFor(`!document.getElementById('pagePanel').hidden`, 'shown again');
+  // saved on this computer, the page stays with the score: after a reload and from My scores
+  await page.press('Ctrl+S');
+  await page.waitFor(`document.getElementById('cloudStatus').textContent.includes('on this computer')`, 'saved locally');
+  await page.waitFor(`new Promise((ok) => { const r = indexedDB.open('pianissimo-pages'); r.onsuccess = () => { const q = r.result.transaction('pages').objectStore('pages').count(); q.onsuccess = () => ok(q.result === 1); }; r.onerror = () => ok(false); })`, 'the page is stored');
+  await page.goto('/app.html');
+  await page.waitFor(`document.getElementById('title').value === 'Little waltz' && !document.getElementById('pageBtn').hidden`, 'the page comes back with the score');
+  assert(await page.eval(`document.getElementById('pagePanel').hidden`), 'shown when asked, not on its own');
+  await page.eval(`document.getElementById('pageBtn').click()`);
+  await page.waitFor(`!document.getElementById('pagePanel').hidden && document.querySelector('#pagePanel img').naturalWidth > 0`, 'the stored page');
+  // a new score has no page
+  await page.goto('/app.html?template=waltz');
+  await page.waitFor(`document.getElementById('title').value === 'Little waltz' && document.getElementById('pageBtn').hidden && document.getElementById('pagePanel').hidden`, 'a template has no page');
+  // leave My scores empty for the tests after this one (the browser profile is shared)
+  await page.eval(`localStorage.removeItem('pianissimo:localId'); indexedDB.deleteDatabase('pianissimo-library'); indexedDB.deleteDatabase('pianissimo-pages'); true`);
+});
+
+// With E2E_DESKTOP_URL=http://127.0.0.1:<port> (a desktop launcher started with --no-window and
+// PIANISSIMO_AUDIVERIS set) and E2E_SCAN_PDF=<a PDF of printed music>, a real scan by Audiveris.
+test(
+  'scanning with the real Audiveris through the desktop launcher',
+  async (page) => {
+    const url = process.env.E2E_DESKTOP_URL;
+    const loaded = page.browser.once('Page.loadEventFired', page.sessionId);
+    await page.send('Page.navigate', { url: `${url}/app.html?template=blank-piano` });
+    await loaded;
+    await page.waitFor(`document.querySelector('#score svg')`);
+    await importFile(page, 'scanMusic', process.env.E2E_SCAN_PDF);
+    await page.waitFor(`!document.querySelector('#scanModal [data-step=busy]').hidden`, 'reading');
+    await page.waitFor(`document.getElementById('scanModal').hidden || !document.querySelector('#scanModal [data-error]').hidden`, 'Audiveris has read the page', 300000);
+    const error = await page.eval(`document.querySelector('#scanModal [data-error]').hidden ? '' : document.querySelector('#scanModal [data-error]').textContent`);
+    assert(!error, `error: ${error}`);
+    const name = process.env.E2E_SCAN_PDF.split(/[\\/]/).pop().replace(/\.pdf$/i, '');
+    await page.waitFor(`document.getElementById('title').value === ${JSON.stringify(name)}`, 'named after the file');
+    const bars = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures.length`);
+    assert(bars > 0, 'bars were read');
+    await page.waitFor(`!document.getElementById('pagePanel').hidden && document.querySelector('#pagePanel img').naturalWidth > 500`, 'the page picture from Audiveris beside the score');
+    await settled(page);
+    await page.shot('real-audiveris');
+  },
+  { needsDesktop: true },
+);
+
+test('recordings: a sung or played melody becomes a score with its tempo and key', async (page) => {
+  // "Ode to joy" in G major at 100 beats a minute, as a WAV file
+  const B4 = [71], C5 = [72], D5 = [74], A4 = [69], G4 = [67];
+  const ode = [[B4, 1], [B4, 1], [C5, 1], [D5, 1], [D5, 1], [C5, 1], [B4, 1], [A4, 1], [G4, 1], [G4, 1], [A4, 1], [B4, 1], [B4, 1.5], [A4, 0.5], [A4, 2]];
+  const wav = recording(join(tmp, 'Ode to joy.wav'), ode, 100, { decay: 0.3 });
+  await page.goto('/app.html?template=blank-piano');
+  await page.waitFor(`document.querySelector('#score svg')`);
+  await importFile(page, 'importAudio', wav);
+  await page.waitFor(`!document.querySelector('#audioModal [data-step=review]').hidden`, 'the review step', 30000);
+  const found = await page.eval(`(() => { const f = document.querySelector('#audioModal form'); return { bpm: f.bpm.value, key: f.key.value, title: f.title.value, first: f.firstBeat.value, heard: document.querySelector('#audioModal [data-found]').textContent }; })()`);
+  assert(found.bpm === '100' && found.key === '1' && found.title === 'Ode to joy' && found.first === '1', `found: ${JSON.stringify(found)}`);
+  assert(/\b15\b/.test(found.heard), `notes heard: ${found.heard}`);
+  await page.shot('audio-review');
+  await page.eval(`(() => { const f = document.querySelector('#audioModal form'); f.sound.value = 'flute'; f.requestSubmit(); })()`);
+  await page.waitFor(`document.getElementById('title').value === 'Ode to joy'`, 'the score is written');
+  const bars = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures.map((m) => m.staves[0].map((e) => (e.pitches[0] ? e.pitches[0].step + e.pitches[0].octave : 'r') + ':' + e.type + '.'.repeat(e.dots)).join(' '))`);
+  const want = ['B4:q B4:q C5:q D5:q', 'D5:q C5:q B4:q A4:q', 'G4:q G4:q A4:q B4:q', 'B4:q. A4:8 A4:h'];
+  assert(JSON.stringify(bars) === JSON.stringify(want), `bars: ${JSON.stringify(bars)}`);
+  await page.shot('audio-score');
+  const sound = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).staves[0].sound`);
+  assert(sound === 'flute', `sound: ${sound}`);
+});
+
+test('recordings: chords (Basic Pitch) become a piano score', async (page) => {
+  // C, F, G, C major chords, a half note each at 80 beats a minute, plucked
+  const wav = recording(join(tmp, 'Chords.wav'), [[[48, 60, 64, 67], 2], [[53, 57, 60, 65], 2], [[55, 59, 62, 67], 2], [[48, 60, 64, 67], 2]], 80, { decay: 0.9 });
+  await page.goto('/app.html?template=blank-piano');
+  await page.waitFor(`document.querySelector('#score svg')`);
+  await page.eval(`document.querySelector('.file-actions [data-cmd=importAudio]').click()`);
+  await page.waitFor(`!document.getElementById('audioModal').hidden`);
+  await page.eval(`document.querySelector('#audioModal input[value=chords]').click()`);
+  await importFile(page, 'importAudio', wav);
+  await page.waitFor(`!document.querySelector('#audioModal [data-step=review]').hidden || !document.querySelector('#audioModal [data-error]').hidden`, 'Basic Pitch has listened', 120000);
+  const error = await page.eval(`document.querySelector('#audioModal [data-error]').hidden ? '' : document.querySelector('#audioModal [data-error]').textContent`);
+  assert(!error, `error: ${error}`);
+  // the tempo of four equal chords is ambiguous: write it at the tempo it was played
+  await page.eval(`(() => { const f = document.querySelector('#audioModal form'); f.bpm.value = '80'; f.requestSubmit(); })()`);
+  await page.waitFor(`document.getElementById('title').value === 'Chords'`, 'the score is written');
+  const score = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave'))`);
+  assert(score.staves.length === 2, `a grand staff: ${score.staves.length} staves`);
+  const pitches = (bar, staff) => [...new Set(score.measures[bar].staves[staff].flatMap((e) => e.pitches.map((p) => p.step + p.octave)))].sort().join(' ');
+  const treble = pitches(0, 0);
+  for (const n of ['C4', 'E4', 'G4']) assert(treble.includes(n), `bar 1 treble has ${n}: ${treble}`);
+  assert(pitches(0, 1).includes('C3'), `bar 1 bass has C3: ${pitches(0, 1)}`);
+  const all = score.measures.flatMap((m) => m.staves.flatMap((st) => st.flatMap((e) => e.pitches.map((p) => p.step + p.octave))));
+  for (const n of ['F3', 'A3', 'G3', 'B3', 'D4']) assert(all.includes(n), `${n} is heard somewhere: ${all.join(' ')}`);
+});
 
 test(
   'account: forgot the password, reset it from the emailed link; confirm the email',
@@ -847,7 +1060,9 @@ test('desktop updates: a new release shows a bar with its notes; Update now save
   assert(await page.eval(`!document.getElementById('updateBar')`), 'Later hides the bar');
   // asking from the command search shows it again; Update now goes to the launcher
   await page.press('Ctrl+Shift+KeyP');
+  await page.waitFor(`!document.getElementById('searchModal').hidden && document.activeElement?.id === 'searchInput'`, 'the command search');
   await page.eval(`(() => { const i = document.querySelector('#searchModal input, #searchInput'); i.value = 'check for updates'; i.dispatchEvent(new Event('input')); return true; })()`);
+  await page.waitFor(`document.querySelector('#searchList li.sel')?.textContent.startsWith('Check for updates')`, 'the command is listed');
   await page.press('Enter');
   await page
     .waitFor(`!!document.getElementById('updateBar')`, 'bar after Check for updates')
@@ -1130,6 +1345,7 @@ async function main() {
   for (const t of tests) {
     // E2E_ONLY=teaching runs only the tests whose name contains that text
     if (process.env.E2E_ONLY && !t.name.includes(process.env.E2E_ONLY)) continue;
+    if (t.needsDesktop && !(process.env.E2E_DESKTOP_URL && process.env.E2E_SCAN_PDF)) continue;
     if (t.needsApi && !php) {
       console.log(`  - ${t.name} (skipped: PHP not found)`);
       continue;

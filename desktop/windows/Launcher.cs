@@ -373,7 +373,9 @@ namespace Pianissimo
             if (req.Path == "/__desktop.json")
             {
                 // tells the app it runs as the desktop app: it then checks for new releases
-                string info = "{\"platform\":\"windows\",\"version\":" + JsonString(BuildInfo.Version) + ",\"canInstall\":" + (Updater.CanInstall ? "true" : "false") + "}";
+                // and whether it can scan sheet music here (Audiveris is installed)
+                string info = "{\"platform\":\"windows\",\"version\":" + JsonString(BuildInfo.Version) + ",\"canInstall\":" + (Updater.CanInstall ? "true" : "false") +
+                    ",\"scan\":" + (Scanner.Find() != null ? "true" : "false") + "}";
                 Send(s, 200, "OK", "application/json", Encoding.UTF8.GetBytes(info), req.Method == "HEAD", new[] { "Cache-Control: no-store" });
                 return;
             }
@@ -381,9 +383,7 @@ namespace Pianissimo
             {
                 // "Update now": only from our own page (the custom header cannot be sent by other sites without
                 // a permission this server never gives; the Origin must be ours too)
-                string origin = req.Header("Origin");
-                bool ours = origin == "http://127.0.0.1:" + port || origin == "http://localhost:" + port;
-                if (req.Method != "POST" || req.Header("X-Pianissimo-Desktop") != "1" || !ours)
+                if (!FromOurPage(req))
                 {
                     Send(s, 403, "Forbidden", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Forbidden"), false, null);
                     return;
@@ -398,6 +398,36 @@ namespace Pianissimo
                 catch (Exception ex)
                 {
                     Send(s, 500, "Internal Server Error", "application/json", Encoding.UTF8.GetBytes("{\"error\":" + JsonString(ex.Message) + "}"), false, new[] { "Cache-Control: no-store" });
+                }
+                return;
+            }
+            if (req.Path == "/__desktop/scan")
+            {
+                // "Scan a page…": the file is the body; Audiveris on this computer reads it
+                if (!FromOurPage(req))
+                {
+                    Send(s, 403, "Forbidden", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Forbidden"), false, null);
+                    return;
+                }
+                try
+                {
+                    Scanner.Result r = Scanner.Scan(req.Body, Uri.UnescapeDataString(req.Header("X-File-Name") ?? ""));
+                    StringBuilder json = new StringBuilder("{\"result\":{\"format\":\"").Append(r.Format)
+                        .Append("\",\"data\":\"").Append(Convert.ToBase64String(r.Music)).Append("\",\"pages\":[");
+                    for (int i = 0; i < r.Pages.Count; i++)
+                    {
+                        if (i > 0) json.Append(',');
+                        json.Append('"').Append(Convert.ToBase64String(r.Pages[i])).Append('"');
+                    }
+                    json.Append("]}}");
+                    Send(s, 200, "OK", "application/json", Encoding.UTF8.GetBytes(json.ToString()), false, new[] { "Cache-Control: no-store" });
+                }
+                catch (Exception ex)
+                {
+                    ScanError se = ex as ScanError;
+                    int code = se != null ? se.Status : 500;
+                    string message = se != null ? ex.Message : "Audiveris could not read that file: " + ex.Message;
+                    Send(s, code, "Error", "application/json", Encoding.UTF8.GetBytes("{\"error\":" + JsonString(message) + "}"), false, new[] { "Cache-Control: no-store" });
                 }
                 return;
             }
@@ -457,6 +487,15 @@ namespace Pianissimo
             }
             string cache = req.Path.StartsWith("/assets/") ? "Cache-Control: public, max-age=31536000, immutable" : "Cache-Control: no-cache";
             Send(s, 200, "OK", MimeType(full), File.ReadAllBytes(full), req.Method == "HEAD", new[] { cache });
+        }
+
+        /// <summary>A request from Pianissimo's own page: a POST with our custom header (other websites cannot
+        /// send it to this computer without a permission this server never gives) and our Origin.</summary>
+        static bool FromOurPage(Request req)
+        {
+            string origin = req.Header("Origin");
+            bool ours = origin == "http://127.0.0.1:" + port || origin == "http://localhost:" + port;
+            return req.Method == "POST" && req.Header("X-Pianissimo-Desktop") == "1" && ours;
         }
 
         static string JsonString(string value)

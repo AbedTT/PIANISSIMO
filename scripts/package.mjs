@@ -231,7 +231,11 @@ if (process.platform === 'win32' && csc) {
   };
 
   const launcher = join(work, 'Pianissimo.exe');
-  compile(launcher, [join(src, 'Common.cs'), join(src, 'Launcher.cs'), join(src, 'Updater.cs'), buildInfo], ['/r:System.Web.Extensions.dll']);
+  compile(
+    launcher,
+    [join(src, 'Common.cs'), join(src, 'Launcher.cs'), join(src, 'Updater.cs'), join(src, 'Scanner.cs'), buildInfo],
+    ['/r:System.Web.Extensions.dll', '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll'],
+  );
   sign(launcher); // before it goes into the installer and the zip
   const readme = Buffer.from(
     [

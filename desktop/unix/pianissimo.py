@@ -9,9 +9,13 @@ and keeps serving until you press Ctrl+C.
 
     pianissimo [score files...]
 
+"Scan a page" reads sheet music with Audiveris (https://audiveris.github.io), when it is installed:
+PIANISSIMO_AUDIVERIS, "audiveris=" in settings.ini, the Audiveris app on macOS or `audiveris` on the PATH.
+
 /server/* goes to the online server from settings.ini ("server=https://..."), or PIANISSIMO_SERVER,
 if one is set; otherwise the app works locally. Mirrors desktop/windows/Launcher.cs.
 """
+import base64
 import http.client
 import http.cookies
 import http.server
@@ -23,11 +27,13 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 import webbrowser
 
 FIRST_PORT, LAST_PORT = 47831, 47840
@@ -61,14 +67,106 @@ def read_version():
         return ""
 
 
-def read_server():
-    value = os.environ.get("PIANISSIMO_SERVER", "")
-    if not value and os.path.exists(SETTINGS_FILE):
+def read_setting(name):
+    """A "name=value" line of settings.ini (the last one wins), or ""."""
+    value = ""
+    if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, encoding="utf-8") as f:
             for line in f:
-                if line.strip().lower().startswith("server="):
-                    value = line.strip()[7:].strip()
+                if line.strip().lower().startswith(name + "="):
+                    value = line.strip()[len(name) + 1:].strip()
+    return value
+
+
+def read_server():
+    value = os.environ.get("PIANISSIMO_SERVER", "") or read_setting("server")
     return value.rstrip("/") if re.match(r"^https?://[^\s/]+", value or "") else None
+
+
+# ------------------------------------------------------------------ scanning sheet music (Audiveris)
+SCAN_MAX_BYTES = 30 * 1024 * 1024
+SCAN_TIME_LIMIT = 300
+SCAN_LOCK = threading.Lock()
+
+
+class ScanError(Exception):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+
+
+def find_audiveris():
+    candidates = [os.environ.get("PIANISSIMO_AUDIVERIS", ""), read_setting("audiveris")]
+    if MAC:
+        for base in ("/Applications", os.path.expanduser("~/Applications")):
+            candidates.append(os.path.join(base, "Audiveris.app", "Contents", "MacOS", "Audiveris"))
+    candidates += ["/opt/audiveris/bin/Audiveris", "/opt/audiveris/bin/audiveris", shutil.which("audiveris") or "", shutil.which("Audiveris") or ""]
+    for c in candidates:
+        if c and os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
+def kind_of(data):
+    if data[:4] == b"%PDF":
+        return "pdf"
+    if data[:4] == b"\x89PNG":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:4] in (b"II*\x00", b"MM\x00*"):
+        return "tif"
+    return None
+
+
+def base_name(name):
+    stem = os.path.splitext(os.path.basename(name or ""))[0]
+    stem = re.sub(r"[^\w ().,'-]+", " ", stem).strip()[:60].strip()
+    return stem if stem and not stem.startswith(".") else "Scanned page"
+
+
+def scan(data, file_name):
+    """Audiveris reads the page; returns the MusicXML and its black-and-white picture of each page."""
+    exe = find_audiveris()
+    if not exe:
+        raise ScanError(501, "Audiveris is not installed on this computer.")
+    if len(data) > SCAN_MAX_BYTES:
+        raise ScanError(413, "That file is too large to scan (30 MB at most).")
+    kind = kind_of(data)
+    if not kind:
+        raise ScanError(415, "Scan a PDF, PNG, JPEG or TIFF file.")
+    with SCAN_LOCK, tempfile.TemporaryDirectory(prefix="pianissimo-scan-") as folder:
+        out = os.path.join(folder, "out")
+        os.mkdir(out)
+        page = os.path.join(folder, base_name(file_name) + "." + kind)
+        with open(page, "wb") as f:
+            f.write(data)
+        try:
+            subprocess.run([exe, "-batch", "-export", "-output", out, page], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=SCAN_TIME_LIMIT)
+        except subprocess.TimeoutExpired:
+            raise ScanError(504, "Reading the music took too long. Try one page at a time.")
+        music = book = None
+        for root, _dirs, files in os.walk(out):
+            for name in sorted(files):
+                low = name.lower()
+                if not music and low.endswith((".mxl", ".musicxml", ".xml")):
+                    music = os.path.join(root, name)
+                if not book and low.endswith(".omr"):
+                    book = os.path.join(root, name)
+        if not music:
+            raise ScanError(422, "No music could be recognised on that page. Try a straighter, sharper scan or photo.")
+        with open(music, "rb") as f:
+            result = {"format": "mxl" if music.lower().endswith(".mxl") else "musicxml", "data": base64.b64encode(f.read()).decode(), "pages": []}
+        if book:
+            try:
+                with zipfile.ZipFile(book) as z:
+                    sheets = sorted(
+                        (int(m.group(1)), n) for n in z.namelist() for m in [re.match(r"^sheet#(\d+)/BINARY\.png$", n)] if m
+                    )
+                    result["pages"] = [base64.b64encode(z.read(n)).decode() for _, n in sheets]
+            except (OSError, zipfile.BadZipFile):
+                pass
+        return result
 
 
 SERVER = read_server()
@@ -125,8 +223,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send(200, b"ok")
         if path == "/__desktop.json":
             # tells the app it runs as the desktop app, so it checks for new releases (and offers the download)
-            info = {"platform": "macos" if MAC else "linux", "version": read_version(), "canInstall": False}
+            info = {"platform": "macos" if MAC else "linux", "version": read_version(), "canInstall": False, "scan": bool(find_audiveris())}
             return self.send(200, json.dumps(info).encode(), "application/json", [("Cache-Control", "no-store")], self.command == "HEAD")
+        if path == "/__desktop/scan":
+            # "Scan a page": only from our own page (custom header + our Origin), the file is the body
+            origin = self.headers.get("Origin")
+            ours = origin in ("http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT)
+            if self.command != "POST" or self.headers.get("X-Pianissimo-Desktop") != "1" or not ours:
+                return self.send(403, b"Forbidden")
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > SCAN_MAX_BYTES:
+                return self.send(413, json.dumps({"error": "That file is too large to scan (30 MB at most)."}).encode(), "application/json")
+            data = self.rfile.read(length)
+            try:
+                result = scan(data, urllib.parse.unquote(self.headers.get("X-File-Name") or ""))
+                return self.send(200, json.dumps({"result": result}).encode(), "application/json", [("Cache-Control", "no-store")])
+            except ScanError as err:
+                return self.send(err.status, json.dumps({"error": str(err)}).encode(), "application/json", [("Cache-Control", "no-store")])
+            except OSError as err:
+                return self.send(500, json.dumps({"error": "Audiveris could not read that file: %s" % err}).encode(), "application/json")
         if path.startswith("/__open/"):
             parts = path.split("/")
             target = OPEN_FILES.get(parts[2]) if len(parts) > 2 else None

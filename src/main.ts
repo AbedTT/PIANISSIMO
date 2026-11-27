@@ -2,6 +2,10 @@ import { startErrorReporting } from './monitor/errors';
 import { isValidScore } from './model/validate';
 import { LocalLibrary } from './library/local';
 import { initUpdates } from './desktop/updateUi';
+import { ScanDialog, isScannable, type ScanResult } from './scan/scanDialog';
+import { PagePanel } from './ui/pagePanel';
+import { base64Bytes, indexedDbPages, memoryPages } from './library/pages';
+import { AudioDialog, isAudioFile } from './audio/audioDialog';
 import './styles.css';
 import './ios.css';
 import { MidiInput } from './audio/midiInput';
@@ -64,9 +68,98 @@ const midi = new MidiInput();
 const cloud = new Cloud(editor, (m) => toast(m), (s) => {
   player.stop();
   editor.load(s);
+  // a score from a library: its own page (if any) is shown once it is linked
+  forgetPages();
 });
 // desktop app: new releases (checked once a day; "Check for updates" in the command search)
 const updates = initUpdates({ toast: (m) => toast(m), beforeInstall: () => cloud.flush() });
+
+// ------------------------------------------------------------------ the printed page beside the score
+// After a scan (or "Put a picture of a page beside the score…") the page is shown next to the score.
+// Saved to My scores on this computer, the page is kept with the score and comes back when it is opened.
+const pagePanel = new PagePanel(document.querySelector<HTMLElement>('.workspace')!, $('sheetScroll'));
+const pageStore = typeof indexedDB !== 'undefined' ? indexedDbPages() : memoryPages();
+/** Pages shown for a score that is not saved on this computer yet (kept with it on its first save). */
+let pendingPages: Blob[] | null = null;
+pagePanel.onChange = () => {
+  const btn = $('pageBtn');
+  btn.hidden = !pagePanel.hasPages;
+  btn.setAttribute('aria-pressed', String(pagePanel.isOpen));
+  btn.classList.toggle('active', pagePanel.isOpen);
+};
+function forgetPages() {
+  pendingPages = null;
+  pagePanel.clear();
+}
+/** Show pages for the score now in the editor; they are kept with it when it is saved on this computer. */
+function showPages(pages: Blob[]) {
+  pagePanel.set(pages);
+  const id = cloud.localId;
+  if (id) void pageStore.put(id, pages).catch(() => {});
+  else pendingPages = pages;
+}
+cloud.onLocalLinked = (id, how) => {
+  if (!id) return forgetPages();
+  if (how === 'saved') {
+    // first save of a scanned score: its page goes along
+    if (pendingPages) void pageStore.put(id, pendingPages).catch(() => toast('The page picture could not be kept on this computer'));
+    pendingPages = null;
+    return;
+  }
+  pendingPages = null;
+  void pageStore.get(id).then(
+    (pages) => (cloud.localId !== id ? undefined : pages?.length ? pagePanel.set(pages, false) : pagePanel.clear()),
+    () => pagePanel.clear(),
+  );
+};
+cloud.onLocalRemoved = (id) => void pageStore.remove(id).catch(() => {});
+cloud.onLocalDuplicated = (from, to) =>
+  void pageStore.get(from).then((pages) => (pages?.length ? pageStore.put(to, pages) : undefined)).catch(() => {});
+
+// ------------------------------------------------------------------ scanning sheet music
+const scanDialog = new ScanDialog({
+  show: (el) => {
+    hideModals();
+    el.hidden = false;
+  },
+  hide: () => hideModals(),
+  signedIn: () => !!cloud.user,
+  askSignIn: (then) => cloud.showAuth('Sign in to scan sheet music (the server reads the page).', then),
+  onScanned: async (result, file) => openScan(result, file),
+});
+
+async function openScan(result: ScanResult, file: File) {
+  const bytes = base64Bytes(result.data);
+  const xml = result.format === 'mxl' ? await readMxl(bytes.buffer as ArrayBuffer) : new TextDecoder().decode(bytes);
+  const score = fromMusicXML(xml);
+  // the page has no readable title: name the score after the file
+  if (!score.title || score.title === 'Imported score' || /^page$/i.test(score.title)) {
+    score.title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim() || 'Scanned page';
+  }
+  player.stop();
+  editor.load(score);
+  cloud.detach();
+  const pages = (result.pages ?? []).map((b64) => new Blob([base64Bytes(b64) as BlobPart], { type: 'image/png' }));
+  // no picture from the scanner: show the file itself when the browser can (a photo)
+  if (!pages.length && /^image\/(png|jpeg)$/.test(file.type)) pages.push(file);
+  if (pages.length) showPages(pages);
+  toast('Scanned: check the notes against the page beside the score (Ctrl+Z returns to your previous score)');
+}
+
+// ------------------------------------------------------------------ audio recordings to notes
+const audioDialog = new AudioDialog({
+  show: (el) => {
+    hideModals();
+    el.hidden = false;
+  },
+  hide: () => hideModals(),
+  onScore: (score) => {
+    player.stop();
+    editor.load(score);
+    cloud.detach();
+    toast('Written from the recording: listen with Space and fix what was misheard (Ctrl+Z returns to your previous score)');
+  },
+});
 midi.onChord = (notes) => {
   if (practice) return practiseChord(notes);
   if (!recording) editor.writeMidi(notes); // while recording, notes are collected with their timing instead
@@ -202,7 +295,8 @@ const app: AppActions = {
   openFile() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json,.pianissimo,.musicxml,.xml,.mxl,.mid,.midi';
+    // scores, and also pages to scan and recordings to turn into notes
+    input.accept = '.json,.pianissimo,.musicxml,.xml,.mxl,.mid,.midi,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.wav,.mp3,.ogg,.oga,.m4a,.aac,.flac,.webm';
     input.onchange = () => {
       const file = input.files?.[0];
       if (file) void openScoreFile(file);
@@ -384,29 +478,24 @@ const app: AppActions = {
   openClasses() {
     void classes?.open();
   },
-  async scanMusic() {
-    if (!cloud.user) return cloud.showAuth('Sign in to scan sheet music (the server reads the page).', async () => app.scanMusic());
-    const available = await api.omrAvailable().then((r) => r.available, () => false);
-    if (!available) return toast('Scanning sheet music is not set up on this server.');
+  scanMusic() {
+    void scanDialog.open();
+  },
+  importAudio() {
+    audioDialog.open();
+  },
+  togglePagePanel() {
+    if (!pagePanel.hasPages) return toast('No page to show: scan a page, or put a picture of one beside the score');
+    pagePanel.toggle();
+  },
+  pageBeside() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/png,image/jpeg,image/tiff,application/pdf';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      toast('Reading the music… (this can take a minute)');
-      try {
-        const { result } = await api.scanMusic(file);
-        const bytes = Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0));
-        const xml = result.format === 'mxl' ? await readMxl(bytes.buffer) : new TextDecoder().decode(bytes);
-        const score = fromMusicXML(xml);
-        player.stop();
-        editor.load(score);
-        cloud.detach();
-        toast('Scanned: check the notes against the page, recognition is not perfect (Ctrl+Z returns to your previous score)');
-      } catch (err) {
-        toast((err as Error).message);
-      }
+    input.accept = 'image/png,image/jpeg,image/webp,image/gif';
+    input.multiple = true;
+    input.onchange = () => {
+      const files = [...(input.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      if (files.length) showPages(files);
     };
     input.click();
   },
@@ -469,6 +558,9 @@ function run(cmd: Command) {
 
 /** Open a Pianissimo, MusicXML (.musicxml/.xml/.mxl) or MIDI file into the editor. */
 async function openScoreFile(file: File) {
+  // a PDF or picture of sheet music: scan it; a recording: turn it into notes
+  if (isScannable(file)) return void scanDialog.open(file);
+  if (isAudioFile(file)) return audioDialog.open(file);
   try {
     if (/\.midi?$/i.test(file.name)) {
       const imported = midiToScore(new Uint8Array(await file.arrayBuffer()), file.name.replace(/\.midi?$/i, ''));
@@ -1376,7 +1468,7 @@ function showModal(id: string) {
 }
 function hideModals() {
   closeSidePanel();
-  for (const id of ['moreModal', 'helpModal', 'searchModal', 'newModal', 'transposeModal', 'printModal', 'barModal', 'partsModal', 'commentsModal', 'checksModal']) {
+  for (const id of ['moreModal', 'helpModal', 'searchModal', 'newModal', 'transposeModal', 'printModal', 'barModal', 'partsModal', 'commentsModal', 'checksModal', 'scanModal', 'audioModal']) {
     $(id).hidden = true;
   }
 }
@@ -2096,7 +2188,7 @@ window.addEventListener('resize', () => {
 const MORE_GROUPS = [
   ['new', 'open', 'save', 'share', 'library'],
   ['print', 'exportXml', 'exportMidi', 'exportWav', 'exportPng', 'exportSvg', 'download', 'history'],
-  ['recordMic', 'midi', 'record', 'classes'],
+  ['scanMusic', 'importAudio', 'recordMic', 'midi', 'record', 'classes'],
   ['search', 'help', 'tutorial'],
 ];
 function openSidePanel() {
@@ -2304,6 +2396,17 @@ type LaunchParams = { files: { getFile(): Promise<File> }[] };
   },
 );
 registerServiceWorker();
+
+// a file dropped anywhere on the editor opens: a score, a page to scan, a recording to turn into notes
+window.addEventListener('dragover', (e) => {
+  if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+});
+window.addEventListener('drop', (e) => {
+  const file = e.dataTransfer?.files[0];
+  if (!file) return;
+  e.preventDefault();
+  void openScoreFile(file);
+});
 
 // The desktop launcher (desktop/) opens double-clicked files as app.html?file=/__open/<id>/<name>.
 // Only that same-origin path is accepted, so a link can't make the editor fetch anything else.

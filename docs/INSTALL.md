@@ -29,6 +29,11 @@ ask for administrator rights. Start Pianissimo from the Start menu or the deskto
   then on it saves itself as you edit. Open **My scores** to switch between scores, duplicate or delete
   them. No account or server is needed. **Back up all…** there writes every score to one file (keep it on
   a USB stick or in the cloud); **Restore…** or **Open** adds them back, also on another computer.
+- **Scanning sheet music.** *Import ▾ → Scan a page* turns a PDF or photo of printed music into a score,
+  read on this computer by **Audiveris** (free, open source). Install it once: download the file ending in
+  `windows-x86_64.msi` from [its releases page](https://github.com/Audiveris/audiveris/releases/latest) and
+  run it (it brings its own Java). Pianissimo finds it in its usual folder; if you put it elsewhere, add a
+  line `audiveris=C:\path\to\Audiveris` to `settings.ini`. Without Audiveris the dialog shows these steps.
 - **Updates.** Once a day Pianissimo checks whether a new version is out. If so, a bar at the top shows
   what is new, with **Update now**: it saves your work, downloads the new setup, checks it, installs it and
   opens Pianissimo again (your scores and settings stay). **Later** waits for the next version. You can
@@ -55,6 +60,8 @@ signature, so Gatekeeper opens it without the "developer cannot be verified" dia
   the script starts their installer (`xcode-select --install`); run the script again afterwards.
 - **The window.** With Chrome, Edge, Chromium or Brave installed, Pianissimo opens in its own window.
   Otherwise it opens in your default browser (Safari works too).
+- **Scanning sheet music.** Install Audiveris from [its releases page](https://github.com/Audiveris/audiveris/releases/latest)
+  (the `.dmg` for your Mac: arm64 for Apple silicon, x86_64 for Intel) into Applications.
 - **Opening files.** Use **Open** in Pianissimo. Double-clicking score files in Finder is not
   supported on the Mac yet.
 - **Removing.** Run `sh ~/Applications/Pianissimo.app/Contents/Resources/uninstall.sh`. Add `--purge` to
@@ -70,6 +77,9 @@ files. The `pianissimo` command also works if `~/.local/bin` is on your PATH.
 
 - **Requirements.** Python 3.7+, which almost every desktop distribution includes. Any browser works;
   with Chrome, Chromium, Edge or Brave, Pianissimo gets its own window.
+- **Scanning sheet music.** Install Audiveris (the `.deb` from [its releases page](https://github.com/Audiveris/audiveris/releases/latest),
+  or from Flathub). Pianissimo looks for `/opt/audiveris/bin/Audiveris` and `audiveris` on the PATH; set
+  `audiveris=` in `settings.ini` for anywhere else.
 - **Removing.** Run `sh ~/.local/share/pianissimo/program/uninstall.sh`. Add `--purge` to delete the
   saved scores as well.
 - **Without installing.** You can also run `python3 pianissimo.py` from the unpacked folder.
