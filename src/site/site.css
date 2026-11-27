@@ -214,6 +214,8 @@ section.block p.sub { color: var(--muted); font-size: 19px; margin: 0 0 32px; ma
 .viewer-bar h1 { margin: 0; font-size: clamp(28px, 3.4vw, 38px); letter-spacing: -0.03em; font-weight: 800; }
 .viewer-bar .by { color: var(--muted); }
 .viewer-bar .spacer { flex: 1; }
+.v-header-note { font: 14px Georgia, serif; color: #1c1c1e; padding: 4px 8px 0; }
+.v-footer-note { font: italic 13px/1.45 Georgia, serif; color: #1c1c1e; white-space: pre-line; border-top: 1px solid rgba(60, 60, 67, 0.18); margin: 8px 8px 0; padding-top: 8px; }
 .viewer-sheet { background: #fff; color: #000; border-radius: var(--radius); padding: 18px 0; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1), 0 0 0 0.5px rgba(0, 0, 0, 0.06); position: relative; }
 .viewer-sheet .playhead { position: absolute; width: 3px; background: #34c759; border-radius: 2px; display: none; pointer-events: none; }
 .viewer-drop { background: var(--card); border: 2px dashed var(--line); border-radius: var(--radius); padding: 60px 20px; text-align: center; color: var(--muted); }

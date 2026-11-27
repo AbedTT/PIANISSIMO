@@ -85,6 +85,7 @@ export const MESSAGE_PATTERNS: { re: RegExp; to: [string, string, string] }[] = 
   { re: /^Bar (\d+) updated$/, to: ['Mesure $1 mise à jour', 'Compás $1 actualizado', 'Takt $1 aktualisiert'] },
   { re: /^Changes removed from bar (\d+)$/, to: ['Changements retirés de la mesure $1', 'Cambios quitados del compás $1', 'Änderungen aus Takt $1 entfernt'] },
   { re: /^Class created\. Students join with the code (\w+)$/, to: ['Classe créée. Les élèves la rejoignent avec le code $1', 'Clase creada. Los alumnos entran con el código $1', 'Klasse erstellt. Schüler treten mit dem Code $1 bei'] },
+  { re: /^Combined (\d+) notes? into chords$/, to: ['$1 note(s) réunie(s) en accords', '$1 nota(s) unida(s) en acordes', '$1 Note(n) zu Akkorden zusammengefasst'] },
   { re: /^Copied (\d+) items?$/, to: ['$1 élément(s) copié(s)', '$1 elemento(s) copiado(s)', '$1 Element(e) kopiert'] },
   { re: /^Cut (\d+) items?$/, to: ['$1 élément(s) coupé(s)', '$1 elemento(s) cortado(s)', '$1 Element(e) ausgeschnitten'] },
   { re: /^Couldn't load “(.+)” \(offline\?\)\. Using a synth sound for now\.$/, to: ['Impossible de charger « $1 » (hors ligne ?). Un son de synthèse est utilisé pour l’instant.', 'No se pudo cargar «$1» (¿sin conexión?). Se usa un sonido de sintetizador por ahora.', '„$1“ konnte nicht geladen werden (offline?). Vorerst ein Synthesizer-Klang.'] },

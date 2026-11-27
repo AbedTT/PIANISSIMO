@@ -493,6 +493,8 @@ function renderAll() {
   layout = renderScore($('score'), editor.score, sheetWidth(), { hints: true });
   $<HTMLInputElement>('title').value = editor.score.title;
   $<HTMLInputElement>('composer').value = editor.score.composer;
+  $<HTMLInputElement>('headerNote').value = editor.score.headerNote ?? '';
+  $<HTMLTextAreaElement>('footerNote').value = editor.score.footerNote ?? '';
   syncSidePanel();
   updateCursor();
   renderToolbar();
@@ -504,6 +506,24 @@ function renderAll() {
 
 function staveBox(m: number, s: number) {
   return layout?.staves.find((b) => b.m === m && b.s === s);
+}
+
+/**
+ * Scroll the sheet just enough to show a box given in score coordinates. The cursor element itself
+ * can't be used for this: it glides to its new place (CSS transition), so while it moves the browser
+ * would still see it at the old note, often far up the page.
+ */
+function revealInSheet(left: number, top: number, width: number, height: number) {
+  const sc = $('sheetScroll');
+  const wrap = $('scoreWrap').getBoundingClientRect();
+  const view = sc.getBoundingClientRect();
+  const pad = 16;
+  const y0 = wrap.top - view.top + sc.scrollTop + top;
+  const x0 = wrap.left - view.left + sc.scrollLeft + left;
+  if (y0 - pad < sc.scrollTop) sc.scrollTop = y0 - pad;
+  else if (y0 + height + pad > sc.scrollTop + sc.clientHeight) sc.scrollTop = Math.min(y0 - pad, y0 + height + pad - sc.clientHeight);
+  if (x0 - pad < sc.scrollLeft) sc.scrollLeft = x0 - pad;
+  else if (x0 + width + pad > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = x0 + width + pad - sc.clientWidth;
 }
 
 function updateCursor(scroll = true) {
@@ -534,7 +554,7 @@ function updateCursor(scroll = true) {
   }
   el.style.top = `${st.top - st.spacing * 2}px`;
   el.style.height = `${st.spacing * 8}px`;
-  if (scroll) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (scroll) revealInSheet(parseFloat(el.style.left), parseFloat(el.style.top), parseFloat(el.style.width), st.spacing * 8);
   updateSelection();
   updateStatus();
   announce(describeCursor());
@@ -710,6 +730,7 @@ function renderToolbar() {
   );
   group(toolButton(byId('lyrics')), toolButton(byId('chords')), toolButton(byId('staffText')), toolButton(byId('comment')));
   group(toolButton(byId('accompaniment')), toolButton(byId('metronome')), toolButton(byId('countIn')), toolButton(byId('loop')));
+  group(toolButton(byId('copy')), toolButton(byId('cut')), toolButton(byId('paste')));
   group(toolButton(byId('pencil')), toolButton(byId('pianoKeys'), pianoKeys.open ? 'active' : ''), toolButton(byId('undo')), toolButton(byId('redo')));
   $('scoreWrap').classList.toggle('pencil', editor.tool === 'pencil');
   $('midiBtn').classList.toggle('active', midi.enabled);
@@ -990,11 +1011,24 @@ function initSidePanel() {
     editor.mutate((s) => (s.tempo = Math.max(20, Math.min(300, parseInt((e.target as HTMLInputElement).value, 10) || 100))));
   $<HTMLInputElement>('title').onchange = (e) => editor.mutate((s) => (s.title = (e.target as HTMLInputElement).value));
   $<HTMLInputElement>('composer').onchange = (e) => editor.mutate((s) => (s.composer = (e.target as HTMLInputElement).value));
-  for (const input of ['title', 'composer']) {
+  // the two free-text notes; an empty one is removed from the score
+  for (const key of ['headerNote', 'footerNote'] as const) {
+    $<HTMLInputElement>(key).onchange = (e) =>
+      editor.mutate((s) => {
+        const text = (e.target as HTMLInputElement).value.trim();
+        if (text) s[key] = text;
+        else delete s[key];
+      });
+  }
+  for (const input of ['title', 'composer', 'headerNote']) {
     $(input).addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLElement).blur();
     });
   }
+  // the footer may hold several lines: Escape (or Ctrl+Enter) finishes it
+  $('footerNote').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) (e.target as HTMLElement).blur();
+  });
 }
 
 // ------------------------------------------------------------------ lyrics & chord symbols
@@ -1195,7 +1229,20 @@ function initMouse() {
     e.preventDefault();
     (document.activeElement as HTMLElement | null)?.blur();
     if (editor.tool === 'pencil' && !e.shiftKey) editor.writePitchAt(h, editor.pitchAt(h.s, h.half));
-    else editor.setCursor(h, e.shiftKey);
+    else {
+      editor.setCursor(h, e.shiftKey);
+      dragFrom = h;
+    }
+  });
+  // drag across notes to select them (then Ctrl+C / the copy button, and paste elsewhere)
+  let dragFrom: ReturnType<typeof hit> = null;
+  window.addEventListener('mouseup', () => (dragFrom = null));
+  wrap.addEventListener('mousemove', (e) => {
+    if (dragFrom && e.buttons & 1) {
+      const h = hit(e);
+      const c = editor.cursor;
+      if (h && (h.m !== c.m || h.s !== c.s || h.i !== c.i || (h.v ?? 0) !== (c.v ?? 0))) editor.setCursor(h, true);
+    }
   });
   wrap.addEventListener('mousemove', (e) => {
     const g = $('ghost');
@@ -1989,7 +2036,33 @@ function openMoreSheet() {
   $('moreList').querySelector<HTMLElement>('button')?.focus();
 }
 function initPhone() {
-  $('panelBtn').addEventListener('click', () => ($('side').classList.contains('open') ? closeSidePanel() : openSidePanel()));
+  // phones: the panel is a sheet; wider screens: the same button folds the panel away so the music gets the room
+  const phone = () => matchMedia('(max-width: 820px)').matches;
+  const fold = (collapsed: boolean) => {
+    document.body.classList.toggle('side-collapsed', collapsed);
+    if (!phone()) $('panelBtn').setAttribute('aria-expanded', String(!collapsed));
+    try {
+      localStorage.setItem('pianissimo:sideCollapsed', collapsed ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+  };
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem('pianissimo:sideCollapsed');
+  } catch {
+    /* private mode */
+  }
+  fold(stored === '1');
+  $('panelBtn').addEventListener('click', () => {
+    if (!phone()) {
+      fold(!document.body.classList.contains('side-collapsed'));
+      renderAll(); // the sheet is wider or narrower now
+      return;
+    }
+    if ($('side').classList.contains('open')) closeSidePanel();
+    else openSidePanel();
+  });
   $('sideDone').addEventListener('click', closeSidePanel);
   $('sideScrim').addEventListener('click', closeSidePanel);
   $('side').addEventListener('keydown', (e) => {
@@ -2040,6 +2113,8 @@ initPracticeControls();
 enhanceDialogs();
 labelIconButtons();
 translatePage();
+// the toolbar shows the length of the note the cursor starts on (a restored score)
+editor.setCursor(editor.cursor);
 document.fonts.ready.then(renderAll);
 // first visit: offer the tutorial
 if (!Tutorial.seen && !/[?&](import|file|tutorial|template|join|open|class)\b/.test(location.search)) {

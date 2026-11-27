@@ -120,6 +120,15 @@ export const COMMANDS: Command[] = [
     active: (ed) => ed.voice > 0,
   },
   {
+    id: 'combineVoices',
+    label: 'Combine voices 1 and 2 into chords (one stem where the rhythm is the same)',
+    group: 'Notes',
+    run: (ed, app) => {
+      const n = ed.combineVoices();
+      app.notify(n ? `Combined ${n} ${n === 1 ? 'note' : 'notes'} into chords` : 'Nothing to combine: voice 2 has no notes with the same rhythm as voice 1');
+    },
+  },
+  {
     id: 'removeVoice2',
     label: 'Remove this voice from the bar (from voice 1: voices 2–4)',
     group: 'Notes',
@@ -281,6 +290,7 @@ export const COMMANDS: Command[] = [
     id: 'copy',
     label: 'Copy',
     group: 'Selection',
+    icon: '<svg class="tool-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
     keys: ['Ctrl+KeyC'],
     run: (ed, app) => {
       const n = ed.copy();
@@ -291,6 +301,7 @@ export const COMMANDS: Command[] = [
     id: 'cut',
     label: 'Cut',
     group: 'Selection',
+    icon: '<svg class="tool-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.1 16 18 4M15.9 16 6 4"/></svg>',
     keys: ['Ctrl+KeyX'],
     run: (ed, app) => {
       const n = ed.cut();
@@ -301,6 +312,7 @@ export const COMMANDS: Command[] = [
     id: 'paste',
     label: 'Paste at cursor',
     group: 'Selection',
+    icon: '<svg class="tool-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/></svg>',
     keys: ['Ctrl+KeyV'],
     run: (ed, app) => {
       if (!ed.paste()) app.notify('Nothing to paste: select notes and press Ctrl+C first');

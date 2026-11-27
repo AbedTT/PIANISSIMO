@@ -10,6 +10,7 @@ export const PAGE_SIZES: Record<PageSize, { name: string; w: number; h: number; 
 const MARGIN_MM = 15;
 const FOOTER_MM = 10;
 const FIRST_HEADER_MM = 24; // title + composer
+const FOOTER_NOTE_MM = 12; // the score's footer note, on the first page
 const RUNNING_HEADER_MM = 7; // small title on later pages
 const PX_PER_MM = 96 / 25.4;
 
@@ -44,7 +45,7 @@ export function buildPrintPages(score: Score): HTMLElement[] {
   let used = 0;
   layout.systems.forEach((sys) => {
     const h = sys.bottom - sys.top;
-    const room = usable(pages.length === 0 ? FIRST_HEADER_MM : RUNNING_HEADER_MM);
+    const room = usable(pages.length === 0 ? FIRST_HEADER_MM + (score.footerNote ? FOOTER_NOTE_MM : 0) : RUNNING_HEADER_MM);
     if (current.length && used + h > room) {
       pages.push(current);
       current = [];
@@ -71,7 +72,10 @@ export function buildPrintPages(score: Score): HTMLElement[] {
     let html = '';
     if (k === 0) {
       html += `<div class="pp-title">${esc(score.title)}</div>`;
-      html += `<div class="pp-composer">${score.partName ? `<span class="pp-part">${esc(score.partName)}</span>` : ''}${esc(score.composer || ' ')}</div>`;
+      const left = [score.partName ? `<b class="pp-part">${esc(score.partName)}</b>` : '', score.headerNote ? `<span>${esc(score.headerNote)}</span>` : '']
+        .filter(Boolean)
+        .join(' · ');
+      html += `<div class="pp-composer"><span class="pp-left">${left}</span><span>${esc(score.composer || ' ')}</span></div>`;
     } else {
       html += `<div class="pp-running">${esc(score.title)}${score.partName ? ` · ${esc(score.partName)}` : ''}</div>`;
     }
@@ -85,6 +89,12 @@ export function buildPrintPages(score: Score): HTMLElement[] {
       svg.style.width = `${contentWmm}mm`;
       svg.style.height = `${(h * scale) / PX_PER_MM}mm`;
       page.append(svg);
+    }
+    if (k === 0 && score.footerNote) {
+      const note = document.createElement('div');
+      note.className = 'pp-note';
+      note.textContent = score.footerNote;
+      page.append(note);
     }
     if (total > 1) {
       const footer = document.createElement('div');

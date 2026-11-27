@@ -42,6 +42,7 @@ export const COMMAND_ROWS: Row[] = [
   // notes and pitch
   ['Write rest', 'Écrire un silence', 'Escribir un silencio', 'Pause schreiben'],
   ['Next voice: 1 → 2 → 3 → 4 (up to four lines on one staff)', 'Voix suivante : 1 → 2 → 3 → 4 (jusqu’à quatre lignes sur une portée)', 'Voz siguiente: 1 → 2 → 3 → 4 (hasta cuatro líneas en un pentagrama)', 'Nächste Stimme: 1 → 2 → 3 → 4 (bis zu vier Linien in einem System)'],
+  ['Combine voices 1 and 2 into chords (one stem where the rhythm is the same)', 'Réunir les voix 1 et 2 en accords (une seule hampe là où le rythme est le même)', 'Unir las voces 1 y 2 en acordes (una plica donde el ritmo es igual)', 'Stimmen 1 und 2 zu Akkorden zusammenfassen (ein Hals, wo der Rhythmus gleich ist)'],
   ['Remove this voice from the bar (from voice 1: voices 2–4)', 'Retirer cette voix de la mesure (depuis la voix 1 : voix 2 à 4)', 'Quitar esta voz del compás (desde la voz 1: voces 2–4)', 'Diese Stimme aus dem Takt entfernen (von Stimme 1 aus: Stimmen 2–4)'],
   ['voice', 'voix', 'voz', 'Stimme'],
   ['Repeat last note', 'Répéter la dernière note', 'Repetir la última nota', 'Letzte Note wiederholen'],

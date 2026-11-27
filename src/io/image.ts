@@ -30,7 +30,10 @@ export async function scoreToSvg(score: Score, width = 1100): Promise<string> {
     const layout = renderScore(scratch, score, width);
     const svg = scratch.querySelector('svg')!;
     const header = 90;
-    const height = layout.height + header;
+    // the footer note goes under the music, one text line per line of the note
+    const footLines = (score.footerNote ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const footer = footLines.length ? 24 + footLines.length * 18 : 0;
+    const height = layout.height + header + footer;
     const inner = svg.innerHTML;
     // VexFlow sets the ink colour once on its <svg> element; staff lines, stems and barlines inherit it.
     // Copy those presentation attributes, or the lines come out with no stroke in the exported file.
@@ -46,7 +49,9 @@ export async function scoreToSvg(score: Score, width = 1100): Promise<string> {
 <rect width="100%" height="100%" fill="#fff"/>
 <text x="${width / 2}" y="44" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="28" font-weight="600">${esc(score.title)}</text>
 ${score.composer ? `<text x="${width - 40}" y="74" text-anchor="end" font-family="Georgia, serif" font-size="14">${esc(score.composer)}</text>` : ''}
+${score.headerNote ? `<text x="40" y="74" font-family="Georgia, serif" font-size="14">${esc(score.headerNote)}</text>` : ''}
 <g transform="translate(0 ${header})" ${paint}>${inner}</g>
+${footLines.map((l, k) => `<text x="40" y="${header + layout.height + 20 + k * 18}" font-family="Georgia, serif" font-size="13" font-style="italic">${esc(l)}</text>`).join('')}
 </svg>`;
   } finally {
     scratch.remove();

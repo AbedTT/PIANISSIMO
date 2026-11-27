@@ -28,7 +28,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 | **Live co-editing (18)** | Invite editors; edit the same score at once with merged bar-level edits, presence cursors and leader-only saving; optional Node realtime service |
 | **Rounding out (24–28)** | Wait mode with the microphone or on-screen piano; grades, marking criteria and a due-date calendar; notifications and an admin screen for reports; translated messages and guide; up to four voices per staff |
 | **Closing the list (29)** | Scanning sheet music (with Audiveris on the server); self-service data download and account deletion; Privacy and Terms rewritten and all legal pages translated (draft for review); emails in each person's language, or a daily digest; voices 3–4 kept clear of 1–2 |
-| **Quality** | Command registry for shortcuts, toolbar, help and search; 181 unit and API tests; 18 end-to-end browser tests (headless Chrome over the DevTools protocol, no extra dependencies), including two-person sessions, a fake microphone, offline use and phone layouts down to 320px |
+| **Quality** | Command registry for shortcuts, toolbar, help and search; 187 unit and API tests; 19 end-to-end browser tests (headless Chrome over the DevTools protocol, no extra dependencies), including two-person sessions, a fake microphone, offline use and phone layouts down to 320px |
 
 ---
 
@@ -329,7 +329,18 @@ Beyond the original plan, built after it was complete.
   - An online server can be connected for sign-in and sharing.
   - The Windows install and uninstall were tested silently. *The macOS/Linux install scripts have not yet been run on those systems.*
 
-**Phases 1–30 are complete.** Section 2 lists what is still open.
+### Phase 31: Editing comforts ✅
+- [x] **Long notes at the end of a bar** carry on into the next bar as tied notes when they are made longer, as when they are typed.
+- [x] **The toolbar follows the selected note**: clicking or arrowing onto a note shows its length, dot and tuplet, and the next length chosen changes it.
+- [x] **Clicking a note no longer scrolls to the top**: the cursor glides to its place (CSS transition), so the scrolling now uses its target position instead of where it is drawn mid-glide.
+- [x] **Wider on-screen keyboard**: as many octaves as fit, up to six (C1–B6); one octave of wide keys on phones.
+- [x] **Notes at the top left and in the footer** (tune and meter; scripture, dedication), kept in the score, printed, exported as images and as MusicXML credits, and shown on shared pages.
+- [x] **Combine voices into chords**: where voice 2 moves with voice 1, both share one stem (soprano + alto, tenor + bass); other notes stay in voice 2.
+- [x] **Beaming by the time signature**: 6/8, 9/8 and 12/8 beam eighths in threes.
+- [x] **Select by dragging** across notes, with **Copy, Cut and Paste** buttons in the toolbar.
+- [x] **The score setup panel folds away** on wider screens (the settings button in the top bar); the choice is remembered.
+
+**Phases 1–31 are complete.** Section 2 lists what is still open.
 
 ## 5. How a phase is built
 

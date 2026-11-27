@@ -179,6 +179,10 @@ export interface Score {
   version: 1;
   title: string;
   composer: string;
+  /** Free text at the top left, level with the composer: the tune name, its meter, a part, … */
+  headerNote?: string;
+  /** Free text under the music: a scripture it is based on, a dedication, where it came from, … */
+  footerNote?: string;
   /** Quarter notes per minute. */
   tempo: number;
   /** Circle-of-fifths position: -7 (7 flats) … +7 (7 sharps). */

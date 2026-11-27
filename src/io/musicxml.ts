@@ -62,6 +62,13 @@ export function toMusicXML(score: Score): string {
   out.push('<identification>');
   if (score.composer) out.push(`<creator type="composer">${esc(score.composer)}</creator>`);
   out.push('<encoding><software>Pianissimo</software></encoding></identification>');
+  // the free-text notes as page credits: other programs show them, and they come back on import
+  if (score.headerNote) {
+    out.push(`<credit page="1"><credit-type>subtitle</credit-type><credit-words justify="left" valign="top">${esc(score.headerNote)}</credit-words></credit>`);
+  }
+  if (score.footerNote) {
+    out.push(`<credit page="1"><credit-type>rights</credit-type><credit-words justify="left" valign="bottom">${esc(score.footerNote)}</credit-words></credit>`);
+  }
 
   const parts = partsOf(score);
   let channel = 0;
@@ -393,6 +400,12 @@ export function fromMusicXML(xml: string): Score {
     staves: [],
     measures: [],
   };
+  const credit = (type: string) =>
+    [...root.querySelectorAll(':scope > credit')].find((c) => c.querySelector('credit-type')?.textContent?.trim() === type)?.querySelector('credit-words')?.textContent?.trim();
+  const headerNote = credit('subtitle');
+  const footerNote = credit('rights');
+  if (headerNote) score.headerNote = headerNote;
+  if (footerNote) score.footerNote = footerNote;
   const firstKey = root.querySelector('key > fifths');
   if (firstKey) score.keyFifths = Math.max(-7, Math.min(7, parseInt(firstKey.textContent!, 10) || 0));
   const firstTime = root.querySelector('time');

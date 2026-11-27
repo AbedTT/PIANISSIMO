@@ -49,7 +49,7 @@
         <button data-cmd="library" title="Your saved scores (Ctrl+Shift+O)">▤ My scores</button>
         <button data-cmd="search" title="Search commands (Ctrl+Shift+P or F1)">⌘</button>
         <button data-cmd="help" title="Keyboard shortcuts (?)">?</button>
-        <button id="panelBtn" class="phone-only icon-btn" aria-label="Score settings" title="Score settings" aria-controls="side" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+        <button id="panelBtn" class="icon-btn" aria-label="Score settings" title="Show or hide the score settings" aria-controls="side" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
         <button id="moreBtn" class="phone-only icon-btn" aria-label="More" title="More" aria-controls="moreModal"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
         <button id="signInBtn" class="primary small">Sign in</button>
         <div class="menu" id="accountMenu" hidden>
@@ -73,7 +73,10 @@
         <div class="sheet" id="sheet">
           <div class="sheet-header">
             <input id="title" class="title-input" spellcheck="false" aria-label="Title" />
-            <input id="composer" class="composer-input" spellcheck="false" placeholder="Composer" aria-label="Composer" />
+            <div class="sheet-subheader">
+              <input id="headerNote" class="header-note-input" spellcheck="false" placeholder="Tune, meter… (optional)" aria-label="Tune, meter or other note (top left)" />
+              <input id="composer" class="composer-input" spellcheck="false" placeholder="Composer" aria-label="Composer" />
+            </div>
           </div>
           <div class="score-wrap" id="scoreWrap">
             <div id="score" role="application" aria-roledescription="score editor"
@@ -87,6 +90,7 @@
             <div id="commentMarks"></div>
             <div id="verseBadge" class="verse-badge" hidden></div>
           </div>
+          <textarea id="footerNote" class="footer-note-input" rows="2" spellcheck="true" placeholder="Footer (optional): a scripture it is based on, a dedication, where the idea came from…" aria-label="Footer note"></textarea>
         </div>
       </section>
 
@@ -110,6 +114,7 @@
           <option value="treble,treble">Two treble staves</option>
         </select></label>
         <button data-cmd="instruments" class="side-wide">🎻 Instruments…</button>
+        <button data-cmd="combineVoices" class="side-wide" title="Where voice 2 moves with voice 1, put both on one stem (soprano + alto, tenor + bass). Select bars first to limit it to them.">🎶 Combine voices into chords</button>
         <label class="check"><input type="checkbox" id="transposedToggle" /> Transposed score (as players read it)</label>
         <h3>Sounds</h3>
         <div id="sounds"></div>

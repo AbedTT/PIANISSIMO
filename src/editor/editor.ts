@@ -35,6 +35,7 @@ import {
   MAX_VOICES,
 } from '../model/score';
 import { MAX_VERSES, setLyricOn } from '../model/lyrics';
+import { combineVoices } from '../model/combine';
 import { addPart, ensureParts, movePart, removePart, writtenShift } from '../model/parts';
 import { transposeEvents, transposeKey, transposeScore } from '../model/transpose';
 import {
@@ -224,6 +225,7 @@ export class Editor {
     this.lastEntered = null;
     this.autosave();
     this.emit('score');
+    this.followNote();
   }
 
   // ---------- cursor ----------
@@ -255,6 +257,28 @@ export class Editor {
     this.cursor = { ...c };
     this.clampCursor();
     this.emit('cursor');
+    if (!extend) this.followNote();
+  }
+
+  /**
+   * Moving onto a note (a click or an arrow key) takes over its length, dot and tuplet, so the
+   * toolbar shows what the note is and the next length chosen re-times it. Rests are left alone,
+   * so typing through empty bars keeps the length you picked.
+   */
+  private followNote() {
+    const e = this.current;
+    if (!e || isRest(e)) return;
+    const tuplet = e.tuplet ? { ...e.tuplet } : null;
+    const same =
+      this.inputType === e.type &&
+      this.inputDots === e.dots &&
+      (this.inputTuplet?.actual ?? 0) === (tuplet?.actual ?? 0) &&
+      (this.inputTuplet?.normal ?? 0) === (tuplet?.normal ?? 0);
+    if (same) return;
+    this.inputType = e.type;
+    this.inputDots = e.dots;
+    this.inputTuplet = tuplet;
+    this.emit('ui');
   }
 
   /** Start/clear a range selection before a cursor move. */
@@ -282,6 +306,7 @@ export class Editor {
     }
     this.clampCursor();
     this.emit('cursor');
+    if (!extend) this.followNote();
   }
 
   stepMeasure(dir: 1 | -1, extend = false) {
@@ -304,6 +329,7 @@ export class Editor {
     this.cursor.v = 0;
     this.cursor.i = this.indexAtTick(this.cursor.m, this.cursor.s, tick);
     this.emit('cursor');
+    if (!extend) this.followNote();
   }
 
   private indexAtTick(m: number, s: number, tick: number, v = 0) {
@@ -797,6 +823,19 @@ export class Editor {
     if (!cur || isRest(cur) || this.anchor) return;
     const { m, s, i } = this.cursor;
     const v = this.voice;
+    const tuplet = this.inputTuplet ?? undefined;
+    const ticks = ticksOf(this.inputType, this.inputDots, tuplet);
+    const room = barTicks(this.score, m) - startTick(this.events, i);
+    if (!tuplet && ticks > room) {
+      // Longer than what is left of the bar: carry on into the next bar as tied notes (overwriting
+      // what is there), like a note written at the end of a bar. Its marks stay on the first part.
+      this.mutate((score) => {
+        const { id } = this.writeEvent(score, m, s, i, { ...clone(cur), type: this.inputType, dots: this.inputDots, tuplet: undefined }, v);
+        const first = lane(score, m, s, v).find((e) => e.id === id);
+        if (first && cur.slurEnd) first.slurEnd = cur.slurEnd;
+      });
+      return;
+    }
     this.mutate((score) => {
       writeAt(
         score,
@@ -1122,6 +1161,26 @@ export class Editor {
    * Remove the cursor's voice (2–4) from the bar, or selected bars, of the cursor's staff.
    * From voice 1, voices 2–4 are all removed.
    */
+  /**
+   * Combine voice 2 into voice 1 as chords where both have the same rhythm (one stem for two
+   * singers), in the selected bars or, with nothing selected, the whole score. Returns how many
+   * notes were combined.
+   */
+  combineVoices(): number {
+    const ms = this.anchor ? this.selectedMeasures() : this.score.measures.map((_, m) => m);
+    let count = 0;
+    const probe = clone(this.score);
+    for (const m of ms) for (let s = 0; s < probe.staves.length; s++) count += combineVoices(probe.measures[m], s);
+    if (!count) return 0;
+    this.mutate((score) => {
+      for (const m of ms) for (let s = 0; s < score.staves.length; s++) combineVoices(score.measures[m], s);
+    });
+    this.cursor.v = 0;
+    this.clampCursor();
+    this.emit('cursor');
+    return count;
+  }
+
   removeVoice2() {
     const s = this.cursor.s;
     const ms = this.selectedMeasures();

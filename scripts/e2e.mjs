@@ -812,6 +812,55 @@ test('embed: an unknown or private score shows a message', async (page) => {
   assert(/no longer shared|Could not load/.test(msg), `message: ${msg}`);
 });
 
+test('editing: drag to select, copy and paste from the toolbar, fold the panel, notes at top and bottom', async (page) => {
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
+  await page.goto('/app.html?template=blank-piano');
+  await settled(page);
+  await page.eval(`document.getElementById('score').focus()`);
+  for (const k of ['C', 'D', 'E', 'F']) await page.press(k);
+  await page.frames();
+  // drag from the first note to the third with the mouse
+  const pts = JSON.parse(
+    await page.eval(`JSON.stringify((() => {
+      // the first three notes of the treble staff (the bass staff's rest comes later in the page)
+      const rects = [...document.querySelectorAll('#score .vf-stavenote')].map((n) => n.getBoundingClientRect());
+      const top = Math.min(...rects.map((r) => r.top));
+      return rects.filter((r) => r.top < top + 60).sort((p, q) => p.left - q.left).slice(0, 3).map((r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 }));
+    })())`),
+  );
+  await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pts[0].x, y: pts[0].y, button: 'left', buttons: 1, clickCount: 1 });
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pts[1].x, y: pts[1].y, button: 'left', buttons: 1 });
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pts[2].x, y: pts[2].y, button: 'left', buttons: 1 });
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pts[2].x, y: pts[2].y, button: 'left', buttons: 0, clickCount: 1 });
+  await page.waitFor(`document.querySelectorAll('#selection > *').length > 0`, 'a selection after dragging');
+  await page.eval(`document.querySelector('[data-command-id=copy]').click(), true`);
+  await page.waitFor(`document.getElementById('toast').textContent.includes('Copied 3')`, 'copied three notes');
+  await page.press('Ctrl+ArrowRight'); // bar 2
+  await page.eval(`document.querySelector('[data-command-id=paste]').click(), true`);
+  await page.frames();
+  const bar2 = await page.eval(`JSON.parse(localStorage.getItem('pianissimo:autosave')).measures[1].staves[0].filter((e) => e.pitches.length).map((e) => e.pitches[0].step).join('')`);
+  assert(bar2 === 'CDE', `pasted into bar 2: ${bar2}`);
+
+  // the settings button folds the side panel away and the sheet gets wider
+  const before = await page.eval(`document.getElementById('sheetScroll').clientWidth`);
+  await page.eval(`document.getElementById('panelBtn').click(), true`);
+  await page.waitFor(`getComputedStyle(document.getElementById('side')).display === 'none'`, 'panel folded');
+  const after = await page.eval(`document.getElementById('sheetScroll').clientWidth`);
+  assert(after > before + 200, `the sheet widened: ${before} -> ${after}`);
+  await page.eval(`document.getElementById('panelBtn').click(), true`);
+  await page.waitFor(`getComputedStyle(document.getElementById('side')).display !== 'none'`, 'panel back');
+
+  // the on-screen keyboard shows several octaves on a wide screen
+  await page.press('Shift+KeyK').catch(() => {});
+  const whites = await page.eval(`document.querySelectorAll('.pk-white').length`);
+  assert(whites >= 28, `at least four octaves of keys: ${whites}`);
+
+  // the note at the top left and the footer are kept with the score
+  await page.eval(`(() => { const h = document.getElementById('headerNote'); h.value = 'Tune: EPIPHANE'; h.dispatchEvent(new Event('change')); const f = document.getElementById('footerNote'); f.value = 'Based on Isaiah 9:6'; f.dispatchEvent(new Event('change')); return true; })()`);
+  const saved = await page.eval(`(() => { const s = JSON.parse(localStorage.getItem('pianissimo:autosave')); return s.headerNote + ' | ' + s.footerNote; })()`);
+  assert(saved === 'Tune: EPIPHANE | Based on Isaiah 9:6', `saved notes: ${saved}`);
+});
+
 // keep last: it stops the web server
 test('offline: the installed app reloads and keeps working without the server', async (page, browser, ctx) => {
   await page.goto('/app.html?template=blank-piano');

@@ -4,8 +4,13 @@
   display: flex; flex-direction: column;
 }
 .print-page .pp-title { font: 600 26px Georgia, 'Times New Roman', serif; text-align: center; margin: 4mm 0 1mm; }
-.print-page .pp-composer { font: 14px Georgia, serif; text-align: right; margin-bottom: 4mm; }
-.print-page .pp-part { float: left; font-weight: 600; }
+.print-page .pp-composer { font: 14px Georgia, serif; display: flex; justify-content: space-between; gap: 8mm; margin-bottom: 4mm; }
+.print-page .pp-left { text-align: left; }
+.print-page .pp-part { font-weight: 600; }
+.print-page .pp-note {
+  position: absolute; left: 15mm; right: 15mm; bottom: 15mm; font: italic 12px/1.4 Georgia, serif; color: #222;
+  white-space: pre-line; border-top: 0.3mm solid #999; padding-top: 2mm; max-height: 11mm; overflow: hidden;
+}
 .print-page .pp-running { font: italic 11px Georgia, serif; color: #555; margin-bottom: 3mm; }
 .print-page svg { display: block; }
 .print-page .pp-footer {

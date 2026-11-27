@@ -140,6 +140,33 @@ describe('Editor', () => {
     expect(ed.score.measures[0].staves[0][0]).toMatchObject({ type: 'h' });
     expect(total(ed.score, 0, 0)).toBe(barTicks(ed.score));
   });
+
+  it('lengthening the last note of a bar carries it into the next bar as a tie', () => {
+    const ed = new Editor(newScore({ measures: 2, staves: [{ clef: 'treble' }] }));
+    ed.setDuration('h');
+    ed.typeLetter('C');
+    ed.setDuration('q');
+    ed.typeLetter('E');
+    ed.typeLetter('F'); // beat 4: one beat left in bar 1
+    for (const l of ['G', 'A', 'B', 'C']) ed.typeLetter(l); // bar 2: G A B C
+    ed.setCursor({ m: 0, s: 0, i: 2 }); // click the F
+    expect(ed.current?.pitches[0].step).toBe('F');
+    ed.setDuration('h'); // two beats: one in bar 1, one tied into bar 2
+    const bar1 = ed.score.measures[0].staves[0];
+    const bar2 = ed.score.measures[1].staves[0];
+    expect(bar1.map((e) => [e.pitches[0]?.step, e.type])).toEqual([['C', 'h'], ['E', 'q'], ['F', 'q']]);
+    expect(bar1[2].tie).toBe(true);
+    // the tied F takes beat 1 of bar 2 (the G is overwritten); the rest of the bar stays
+    expect(bar2.map((e) => [e.pitches[0]?.step, e.type])).toEqual([['F', 'q'], ['A', 'q'], ['B', 'q'], ['C', 'q']]);
+    expect(total(ed.score, 1, 0)).toBe(barTicks(ed.score));
+    // the cursor stays on the note, so a further change works on it too
+    expect(ed.cursor).toMatchObject({ m: 0, i: 2 });
+    ed.toggleDot(); // dotted half: 1 beat here + 2 tied beats in bar 2
+    expect(ed.score.measures[1].staves[0].map((e) => [e.pitches[0]?.step, e.type, e.dots])).toEqual([['F', 'h', 0], ['B', 'q', 0], ['C', 'q', 0]]);
+    ed.undo();
+    ed.undo();
+    expect(ed.score.measures[1].staves[0].map((e) => e.pitches[0]?.step)).toEqual(['G', 'A', 'B', 'C']);
+  });
 });
 
 describe('export', () => {

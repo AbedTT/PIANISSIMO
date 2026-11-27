@@ -269,3 +269,11 @@ body { grid-template-columns: minmax(0, 1fr); }
   background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .menu-list button { white-space: nowrap; }
+
+/* the settings button folds the side panel away on wider screens (on phones it opens the sheet) */
+.icon-btn { display: inline-flex; }
+#panelBtn[aria-expanded='false'] { color: var(--muted); }
+@media (min-width: 821px) {
+  body.side-collapsed .workspace { grid-template-columns: minmax(0, 1fr); }
+  body.side-collapsed .side { display: none; }
+}

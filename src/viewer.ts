@@ -31,6 +31,10 @@ function show(s: Score, by: string) {
   document.title = `${s.title} · Pianissimo`;
   $('vTitle').textContent = s.title;
   $('vBy').textContent = [s.composer, by].filter(Boolean).join(' · ');
+  $('vHeaderNote').textContent = s.headerNote ?? '';
+  $('vHeaderNote').hidden = !s.headerNote;
+  $('vFooterNote').textContent = s.footerNote ?? '';
+  $('vFooterNote').hidden = !s.footerNote;
   $('viewerBar').hidden = false;
   $('vSheet').hidden = false;
   $('vDrop').hidden = true;

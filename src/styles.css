@@ -83,7 +83,15 @@ a.brand { color: inherit; text-decoration: none; }
 .sheet-header input { border: 1px dashed transparent; text-align: center; background: transparent; }
 .sheet-header input:hover, .sheet-header input:focus { border-color: var(--line); outline: none; }
 .title-input { font: 600 26px Georgia, 'Times New Roman', serif; width: 70%; }
-.composer-input { font: 14px Georgia, serif; width: 70%; text-align: right !important; }
+.composer-input { font: 14px Georgia, serif; width: 45%; text-align: right !important; }
+.sheet-subheader { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 0 36px; box-sizing: border-box; }
+.header-note-input { font: 14px Georgia, serif; width: 45%; text-align: left !important; }
+.footer-note-input {
+  display: block; width: calc(100% - 72px); margin: 8px 36px 0; resize: vertical; min-height: 44px;
+  font: italic 13px/1.45 Georgia, serif; color: var(--ink); background: transparent; border: 1px dashed transparent;
+}
+.footer-note-input:hover, .footer-note-input:focus { border-color: var(--line); outline: none; }
+.sheet-header input::placeholder, .footer-note-input::placeholder { color: var(--muted); opacity: 0.6; font-style: italic; }
 .score-wrap { position: relative; }
 #score svg { display: block; }
 .score-wrap.pencil { cursor: crosshair; }
@@ -288,7 +296,7 @@ button.primary.small, .primary.small { padding: 6px 12px; }
 
 /* ---------- on-screen keyboard ---------- */
 .piano-keys {
-  --pk-w: clamp(26px, calc((100vw - 32px) / 14), 46px); --pk-bw: calc(var(--pk-w) * .62);
+  --pk-w: clamp(22px, calc((100vw - 32px) / var(--pk-n, 14)), 46px); --pk-bw: calc(var(--pk-w) * .62);
   background: var(--panel); border-top: 1px solid var(--line); padding: 6px 16px 10px; user-select: none;
 }
 .pk-tools { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; margin-bottom: 6px; }

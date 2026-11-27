@@ -971,13 +971,15 @@ export function renderScore(host: HTMLElement, original: Score, width: number, o
         vs.forEach((v) => v.setStave(staves[s]));
         if (vs.length) f.joinVoices(vs);
       });
+      // beam by the beat of the time signature: 6/8, 9/8 and 12/8 in threes (one dotted-quarter beat each)
+      const groups = Beam.getDefaultBeamGroups(`${ctxs[m].beats}/${ctxs[m].beatType}`);
       const beams = b.lanes.flat().flatMap((l) => {
         const pitched = l.notes.filter((n) => !n.isRest());
         try {
           if (pitched.length < 2) return [];
           return l.stem
-            ? Beam.generateBeams(l.notes, { stemDirection: l.stem, maintainStemDirections: true })
-            : Beam.generateBeams(l.notes);
+            ? Beam.generateBeams(l.notes, { groups, stemDirection: l.stem, maintainStemDirections: true })
+            : Beam.generateBeams(l.notes, { groups });
         } catch {
           return [];
         }

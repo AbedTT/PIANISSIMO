@@ -12,10 +12,18 @@ const STORAGE = 'pianissimo:keys';
  * writes them together. Works without a computer keyboard (tablets, phones).
  */
 export class PianoKeys {
-  /** Lowest C shown (MIDI number); two octaves are visible. */
+  /** Lowest C shown (MIDI number). */
   private low = 48;
   private drawnSpan = 0;
-  private narrow = () => window.matchMedia('(max-width: 560px)').matches;
+  /**
+   * Octaves shown: as many as fit the screen at a comfortable key width, up to six (C1-B6);
+   * one octave of wide keys on a phone. The arrows still reach every octave.
+   */
+  private span = () => {
+    if (window.matchMedia('(max-width: 560px)').matches) return 12;
+    const octaves = Math.floor((window.innerWidth - 32) / (7 * 30));
+    return 12 * Math.max(2, Math.min(6, octaves));
+  };
   private chordMode = false;
   private pending = new Set<number>();
   readonly el: HTMLElement;
@@ -35,7 +43,7 @@ export class PianoKeys {
     this.el.hidden = true;
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE) ?? 'null');
-      if (saved && typeof saved.low === 'number') this.low = Math.max(24, Math.min(84, saved.low));
+      if (saved && typeof saved.low === 'number') this.low = Math.max(12, Math.min(96, saved.low));
       if (saved?.open) this.el.hidden = false;
     } catch {
       /* ignore */
@@ -114,12 +122,12 @@ export class PianoKeys {
     this.drawKeys();
     this.syncLengths();
     window.addEventListener('resize', () => {
-      if ((this.narrow() ? 12 : 24) !== this.drawnSpan) this.drawKeys();
+      if (this.span() !== this.drawnSpan) this.drawKeys();
     });
   }
 
   private shift(by: number) {
-    this.low = Math.max(24, Math.min(84, this.low + by));
+    this.low = Math.max(12, Math.min(108 - this.span(), this.low + by));
     this.save();
     this.drawKeys();
   }
@@ -154,8 +162,11 @@ export class PianoKeys {
     chordBtn.classList.toggle('active', this.chordMode);
     chordBtn.setAttribute('aria-pressed', String(this.chordMode));
     this.el.querySelector<HTMLElement>('[data-act=commit]')!.hidden = !this.chordMode;
-    // two octaves, or one octave of wider keys on a phone (the arrows still reach every octave)
-    const span = this.narrow() ? 12 : 24;
+    const span = this.span();
+    // when the number of octaves changes, keep the same middle (saved positions were for two octaves)
+    const middle = this.low + (this.drawnSpan || 24) / 2;
+    if (span !== this.drawnSpan) this.low = Math.round((middle - span / 2) / 12) * 12;
+    this.low = Math.max(12, Math.min(108 - span, this.low));
     this.drawnSpan = span;
     this.el.querySelector('.pk-range')!.textContent = `C${this.low / 12 - 1}–B${(this.low + span) / 12 - 2}`;
     const whites: string[] = [];
@@ -176,6 +187,7 @@ export class PianoKeys {
       }
     }
     host.style.setProperty('--pk-count', String(w));
+    this.el.style.setProperty('--pk-n', String(w));
     host.innerHTML = whites.join('') + blacks.join('');
     host.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
       b.addEventListener('mousedown', (e) => e.preventDefault());
