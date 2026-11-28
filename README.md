@@ -64,7 +64,7 @@ The tables are created on the first request.
 
 **Other layouts.** If the API lives elsewhere, set `window.PIANISSIMO_API = 'https://…/server/api/index.php'` before the page scripts.
 
-**Desktop app.** `npm run package` builds three installers in `release/`: a Windows setup `.exe`, a portable Windows zip, and a macOS/Linux `.tar.gz` with an install script. No extra tools are needed. See [docs/INSTALL.md](docs/INSTALL.md).
+**Desktop and Android apps.** `npm run package` builds the installers in `release/`: a Windows setup `.exe`, a portable Windows zip, a macOS/Linux `.tar.gz` with an install script, and, when a JDK and the Android SDK are installed, the Android app (`.apk`, Android 10+, works offline without an account). No npm packages or Gradle are needed. See [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Writing music
 

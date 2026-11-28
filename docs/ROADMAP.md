@@ -6,7 +6,7 @@ Reference for "what good looks like": the Flat (flat.io) analysis in [flat-analy
 
 ---
 
-## 1. Where we are (phases 1–42, shipped)
+## 1. Where we are (phases 1–43, shipped)
 
 | Area | Shipped |
 |---|---|
@@ -43,6 +43,8 @@ Everything from the original gap list that shipped in phases 7–18 has been rem
 | Input | Scanning quality depends on Audiveris: clean printed scores read well, handwriting and photos taken at an angle poorly. One-letter chord names (C, F, G) are often missed; text reading is English only | P3 | Upstream |
 | Input | Recordings: the tempo may drift but is written as one tempo mark (the notes are placed by the tracked beats); chords from Basic Pitch are a draft (it hears notes, not voices or hands) | P3 | Idea |
 | Desktop | The Mac scanner setup (hdiutil, ditto) could not be tried here; the Linux one was tried on Windows up to unpacking the real package | P2 | Needs a Mac |
+| Mobile | An iPhone/iPad app: needs a Mac with Xcode (or a macOS build machine) and an Apple Developer account to sign and distribute it. Until then iPhones use the website's **Add to Home Screen** | P2 | Needs an Apple account |
+| Mobile | The Android app is tried on an emulator (Android 14), not yet on a real phone or tablet; it is not on Google Play (a Play developer account and an `.aab` upload are needed) | P2 | Needs a phone |
 | Notation | More than four voices per staff: a deliberate limit, the same as MuseScore and Sibelius and the usual MusicXML practice | — | Not planned |
 
 ## 3. Architecture decisions for the next phases
@@ -413,7 +415,16 @@ Beyond the original plan, built after it was complete.
 - [x] *The tempo changes* in the recording dialog, ticked by itself when the beats speed up or slow down by more than 8 %; doubling or halving the tempo works with it. Tested on Ode to Joy played with an accelerando (80 → 120) and a ritardando (110 → 70): one fixed tempo loses the bar lines, the tracked beats keep every bar right.
 - [x] The website's home page and the guide describe scanning with titles and lyrics, the page following the cursor, recordings with changing tempos and the desktop app (with a download link).
 
-**Phases 1–42 are complete.** Section 2 lists what is still open.
+### Phase 43: The Android app ✅
+- [x] `desktop/android`: one activity with a WebView that serves the built editor from inside the APK at `https://appassets.androidplatform.net/` (a secure origin: IndexedDB, audio, WebAssembly). Like the desktop launchers it answers `/__desktop.json` (`platform: android`, so the app is told about new releases) and `/server/*` (503: not connected). No server, no account, no network needed.
+- [x] What a WebView lacks, added by a small script loaded first on every page (`android.js`) and a Java bridge: exported files saved into *Downloads/Pianissimo* (the page may not fetch its own `blob:` links, so the blobs are kept as they are made), **Print** through Android's print dialog (and PDF), choosing files, links opening in the browser, the Back button closing dialogs and the side panel first (also Android 13+'s back callback), the microphone permission, system bars that take the colour of the editor's top bar, and room for the status bar, navigation bar and keyboard (Android 15+ draws apps under them).
+- [x] Sounds offline: the concert piano's samples are in the APK; other instruments are downloaded the first time they play and kept on the phone.
+- [x] *Scan a page* on a phone explains that scanning needs the computer app.
+- [x] `scripts/android.mjs` (`npm run android`, and part of `npm run package` when a JDK and the SDK are installed): aapt2, javac, d8, zipalign and apksigner, no Gradle or npm packages; the signing key is made once and kept outside the project. Version code from the version (0.7.0 → 700).
+- [x] Tried on an Android 14 emulator over DevTools: the editor loads with no errors, `/__desktop.json` and `/server` answer, IndexedDB works, all files load, a file saves into Downloads with its contents, the phone message and Back work, the print dialog opens, and in airplane mode the app opens, keeps typed notes across a restart and plays them with the piano.
+- [x] The website's home page (a card with the download) and the guide (*Offline and on your phone*) describe it.
+
+**Phases 1–43 are complete.** Section 2 lists what is still open.
 
 ## 5. How a phase is built
 

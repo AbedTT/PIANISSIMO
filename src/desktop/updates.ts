@@ -11,7 +11,8 @@
  */
 
 export interface DesktopInfo {
-  platform: 'windows' | 'macos' | 'linux';
+  /** 'android': the Android app (desktop/android), which answers the same way but cannot scan. */
+  platform: 'windows' | 'macos' | 'linux' | 'android';
   version: string;
   /** The installed Windows app downloads and runs the new setup itself (the portable copy cannot). */
   canInstall: boolean;

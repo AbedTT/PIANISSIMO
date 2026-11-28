@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="page">#12151d</color>
+    <style name="Theme.Pianissimo" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/page</item>
+        <item name="android:colorPrimary">#7c95ff</item>
+        <item name="android:colorAccent">#7c95ff</item>
+        <item name="android:windowSplashScreenBackground">@color/page</item>
+    </style>
+</resources>

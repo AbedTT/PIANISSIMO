@@ -128,6 +128,10 @@ export class ScanDialog {
             <p class="hint">Installed it somewhere else? Add a line audiveris= with the folder of Audiveris to Pianissimo’s settings.ini, then restart Pianissimo.</p>
             </details>
           </div>
+          <div data-setup="phone">
+            <p>Scanning needs a computer: the music scanner (Audiveris) does not run on phones and tablets.</p>
+            <p>Scan the page with the Pianissimo desktop app for Windows, Mac or Linux, export it as MusicXML, and open that file here with Import.</p>
+          </div>
           <div data-setup="web">
             <p>This website has no music scanner set up.</p>
             <p>Scanning works in the Pianissimo desktop app once the free program Audiveris is installed next to it, or on a Pianissimo website whose operator set up Audiveris on the server.</p>
@@ -189,8 +193,11 @@ export class ScanDialog {
     if (where.kind === 'none') {
       this.step('setup');
       const desktop = where.desktop;
-      (this.el.querySelector('[data-setup=desktop]') as HTMLElement).hidden = !desktop;
+      const phone = desktop?.platform === 'android';
+      (this.el.querySelector('[data-setup=desktop]') as HTMLElement).hidden = !desktop || phone;
+      (this.el.querySelector('[data-setup=phone]') as HTMLElement).hidden = !phone;
       (this.el.querySelector('[data-setup=web]') as HTMLElement).hidden = !!desktop;
+      if (phone) return;
       const fileName =
         desktop?.platform === 'macos'
           ? t('the .dmg file (arm64 for Apple silicon, x86_64 for Intel Macs)')

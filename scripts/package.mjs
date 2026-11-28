@@ -5,6 +5,7 @@
 // release/Pianissimo-Setup-<version>.exe            Windows installer (per-user, no admin rights)
 // release/Pianissimo-<version>-windows-portable.zip  the same program, unzip and run Pianissimo.exe
 // release/Pianissimo-<version>-macos-linux.tar.gz    unpack and run `sh install.sh`
+// release/Pianissimo-<version>.apk                   the Android app (scripts/android.mjs), when a JDK and the Android SDK are installed
 //
 // The Windows programs (desktop/windows/*.cs) are compiled with the C# compiler that is part of the
 // .NET Framework 4.x in every Windows 10/11, so the Windows files can only be built on Windows; on
@@ -324,24 +325,47 @@ if (process.platform === 'win32' && csc) {
   made.push(tar);
 }
 
+// ------------------------------------------------------------------ Android (scripts/android.mjs)
+// made when a JDK and the Android SDK are installed; otherwise skipped with the reason
+{
+  const r = spawnSync(process.execPath, [join(root, 'scripts', 'android.mjs')], { encoding: 'utf8' });
+  const apk = join(release, `Pianissimo-${version}.apk`);
+  if (r.status === 0 && existsSync(apk)) {
+    made.push(apk);
+    const key = /A signing key was made[\s\S]*/.exec(r.stdout ?? '');
+    if (key) console.log(key[0].trim());
+  } else if (r.status === 2) {
+    console.log(`Skipping the Android app: ${(r.stderr ?? '').trim()}`);
+  } else {
+    console.error(`${r.stdout ?? ''}${r.stderr ?? ''}`.trim());
+    throw new Error('Building the Android app failed');
+  }
+}
+
 // latest.json: what a self-hosted update feed serves (pianissimo.updateFeed = https://…/latest.json).
-// Put it next to the three files on your website. A GitHub feed does not need it.
+// Put it next to the other files on your website. A GitHub feed does not need it.
 {
   const sha = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
   const byName = (re) => made.find((f) => re.test(f));
   const setupFile = byName(/Setup-.*\.exe$/);
   const tarFile = byName(/macos-linux\.tar\.gz$/);
+  const apkFile = byName(/\.apk$/);
   const latest = {
     version,
     notes: process.env.PIANISSIMO_RELEASE_NOTES ?? '',
     ...(setupFile ? { windows: basename(setupFile) } : {}),
     ...(tarFile ? { macosLinux: basename(tarFile) } : {}),
-    sha256: { ...(setupFile ? { windows: sha(setupFile) } : {}), ...(tarFile ? { macosLinux: sha(tarFile) } : {}) },
+    ...(apkFile ? { android: basename(apkFile) } : {}),
+    sha256: {
+      ...(setupFile ? { windows: sha(setupFile) } : {}),
+      ...(tarFile ? { macosLinux: sha(tarFile) } : {}),
+      ...(apkFile ? { android: sha(apkFile) } : {}),
+    },
   };
   writeFileSync(join(release, 'latest.json'), JSON.stringify(latest, null, 2) + '\n');
 }
 
-console.log('\nDesktop packages:');
+console.log('\nPackages:');
 for (const f of made) console.log(`  ${relative(root, f)}  (${kb(f)})`);
 if (process.platform === 'win32' && csc) {
   console.log(

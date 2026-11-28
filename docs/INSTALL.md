@@ -1,4 +1,4 @@
-# Installing Pianissimo on a computer
+# Installing Pianissimo on a computer or an Android phone
 
 Pianissimo runs in a web browser, but it can also be installed like any other program: with a Start
 menu entry, its own window and taskbar icon, and "Open with" for score files. Once installed it works
@@ -10,6 +10,7 @@ without an internet connection, and scores are saved on the computer.
 | Windows (no install) | `Pianissimo-<version>-windows-portable.zip` | Unzip, double-click `Pianissimo.exe` |
 | macOS 10.13+ | `Pianissimo-<version>-macos-linux.tar.gz` | Unpack, then `sh install.sh` in Terminal |
 | Linux | `Pianissimo-<version>-macos-linux.tar.gz` | Unpack, then `sh install.sh` |
+| Android 10+ (phones, tablets) | `Pianissimo-<version>.apk` | Open the downloaded file, allow installing from the browser once, **Install** |
 | Any (Chrome, Edge, Android, ChromeOS, iPhone, iPad) | the website | Use the browser's **Install app** / **Add to Home Screen** |
 
 ## Windows
@@ -93,6 +94,26 @@ files. The `pianissimo` command also works if `~/.local/bin` is on your PATH.
   saved scores as well.
 - **Without installing.** You can also run `python3 pianissimo.py` from the unpacked folder.
 
+## Android
+
+- **Installing.** Download `Pianissimo-<version>.apk` on the phone and open it. Android asks once to allow
+  installing apps from that browser (or Files app); allow it, then **Install**. Google Play Protect may
+  ask to scan an app it does not know yet: let it.
+- **What it does.** The whole editor is inside the app: it works with no connection and no account, and
+  My scores stay on the phone. Exported files (MusicXML, MIDI, PDF parts, backups) go into
+  *Downloads/Pianissimo*; **Print** opens Android's print dialog, which can also save a PDF; the Back
+  button closes dialogs first. The concert piano sound is in the app; other instruments download the
+  first time they play (with a connection) and are then kept. A microphone feature asks for permission
+  the first time.
+- **Not in the app.** Scanning a page needs Audiveris, which runs on computers only (scan on the desktop
+  app and open the MusicXML on the phone). Signing in, sharing and the online library are off: the app is
+  not connected to a server.
+- **Updates.** The app tells you when a new release is out, like the desktop app; **Download** opens the
+  release page, and the new `.apk` installs over the old one, keeping your scores. Updates must be signed
+  with the same key (see *Building the installers*).
+- **Removing.** Uninstall it like any app. This deletes My scores on the phone too: export a backup first
+  (*My scores → Back up all…*).
+
 ## Publishing an update
 
 People who installed Pianissimo are told about a new version by the app itself. The app looks at the
@@ -102,7 +123,8 @@ the repository must be public. To release:
 1. Raise `"version"` in `package.json` (e.g. `0.4.0` → `0.5.0`): only a higher version counts as an update.
 2. `npm run package` (signed, if you set up signing).
 3. On GitHub: **Releases → Draft a new release**, tag `v0.5.0`, write what is new (people see this text
-   in the app under *What's new*), and attach the three files from `release/`. Publish.
+   in the app under *What's new*), and attach the files from `release/` (the setup `.exe`, the portable
+   zip, the `.tar.gz` and the Android `.apk`). Publish.
 
 Within a day every copy checks and offers it. Windows installs it with **Update now**: it accepts only a
 `Pianissimo-Setup-*.exe` from that repository's releases, compares it with the SHA-256 that GitHub
@@ -154,11 +176,14 @@ The desktop app is the same build as the website, served from the computer:
 npm run package
 ```
 
-This builds the web app, then writes three files to `release/`:
+This builds the web app, then writes these files to `release/`:
 
 - `Pianissimo-Setup-<version>.exe`
 - `Pianissimo-<version>-windows-portable.zip`
 - `Pianissimo-<version>-macos-linux.tar.gz`
+- `Pianissimo-<version>.apk`, when a Java JDK (17+) and the Android SDK (build tools and one platform,
+  as Android Studio installs them) are on this computer; otherwise it is skipped with the reason.
+  `npm run android` builds only the app.
 
 No extra tools or npm packages are needed:
 
@@ -166,6 +191,14 @@ No extra tools or npm packages are needed:
   Windows 10/11, so build the Windows files on Windows. On macOS or Linux only the `.tar.gz` is made.
 - The zip, tar.gz and icon files are written by [scripts/package.mjs](../scripts/package.mjs).
 - The version comes from `package.json`.
+- The Android app ([desktop/android](../desktop/android), built by [scripts/android.mjs](../scripts/android.mjs))
+  is compiled with the SDK's own tools (aapt2, d8, zipalign, apksigner), without Gradle. The first build
+  makes its signing key, `~/.pianissimo/android-release.jks`, with the password next to it in
+  `android-release.password`. **Back both up**: every later version must be signed with the same key, or
+  phones refuse to install it over the old one. To use another key set `PIANISSIMO_ANDROID_KEYSTORE` and
+  `PIANISSIMO_ANDROID_KEYSTORE_PASSWORD` (and `PIANISSIMO_ANDROID_KEY_ALIAS`). The piano samples put in
+  the app are downloaded once into `build/android-cache`. `node scripts/android.mjs --debug` makes a
+  copy whose page can be inspected from Chrome's `chrome://inspect`.
 
 ## Signing
 
